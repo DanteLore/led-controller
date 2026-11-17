@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "ESP-IDF",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:HOME}/esp/v5.5.3/esp-idf/components/**"
+            ],
+            "defines": [
+                "ESP_PLATFORM",
+                "IDF_VER=\"v5.5.3\""
+            ],
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "cStandard": "c11",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
