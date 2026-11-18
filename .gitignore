@@ -5,3 +5,4 @@ sdkconfig.old
 .cache/
 secrets.env
 dependencies.lock
+build-devkit/

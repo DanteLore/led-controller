@@ -1,0 +1,9 @@
+menu "LED controller"
+
+config LED_CONTROLLER_LCD
+    bool "Board has the built-in 1.9\" ST7789 LCD (diymore)"
+    default y
+    help
+        Turn off for a plain ESP32 DevKit V1 with no display.
+
+endmenu

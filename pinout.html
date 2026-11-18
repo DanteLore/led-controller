@@ -1,0 +1,261 @@
+<title>LED Controller Pinout</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: bench card. Board drawn top-down in landscape (USB left), pin labels above and below, chip and checklist below. */
+:root {
+  --bg: #f3f5f2; --fg: #1b2420; --muted: #5d6b64; --line: #c9d2cc;
+  --pcb: #1f3a5f; --pcb-edge: #142a47; --lcd: #0c1418; --pad: #d9b45a;
+  --wire: #0a7d5a; --wire-bg: #d6f1e6;
+  --pwr: #c0392b; --pwr-bg: #f8dcd8;
+  --gnd: #2b2f33; --gnd-bg: #dfe2e4;
+  --lcdpin: #8a7a55; --lcdpin-bg: #efe8d6;
+  --chip: #26292c;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121715; --fg: #e3ebe6; --muted: #94a39b; --line: #2c3631;
+  --pcb: #1d3656; --pcb-edge: #0e1f35; --lcd: #05090b; --pad: #c9a44c;
+  --wire: #45d19f; --wire-bg: #123a2c;
+  --pwr: #ff7a6b; --pwr-bg: #3d1a16;
+  --gnd: #c4cacf; --gnd-bg: #262b2f;
+  --lcdpin: #c7b48a; --lcdpin-bg: #2e2a1f;
+  --chip: #3a3e42; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121715; --fg: #e3ebe6; --muted: #94a39b; --line: #2c3631;
+  --pcb: #1d3656; --pcb-edge: #0e1f35; --lcd: #05090b; --pad: #c9a44c;
+  --wire: #45d19f; --wire-bg: #123a2c;
+  --pwr: #ff7a6b; --pwr-bg: #3d1a16;
+  --gnd: #c4cacf; --gnd-bg: #262b2f;
+  --lcdpin: #c7b48a; --lcdpin-bg: #2e2a1f;
+  --chip: #3a3e42; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); }
+.wrap { max-width: 820px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 28px; }
+h1 { font-size: 1.4rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; }
+.sub { color: var(--muted); margin: 4px 0 0; line-height: 1.5; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; }
+
+.lbl { display: flex; flex-direction: column; min-width: 0; line-height: 1.15;
+  padding: 3px 7px; border-radius: 5px; border: 1.5px solid transparent; }
+.lbl b { font: 600 0.92rem var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lbl small { font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.lbl .n { font: 400 0.65rem var(--mono); color: var(--muted); }
+.lbl.wire { background: var(--wire-bg); border-color: var(--wire); }
+.lbl.wire b, .lbl.wire small { color: var(--wire); }
+.lbl.pwr { background: var(--pwr-bg); border-color: var(--pwr); }
+.lbl.pwr b, .lbl.pwr small { color: var(--pwr); }
+.lbl.gnd { background: var(--gnd-bg); border-color: var(--gnd); }
+.lbl.lcd b { color: var(--lcdpin); }
+.lbl.lcd small { color: var(--lcdpin); }
+.lbl.off b { color: var(--muted); font-weight: 400; }
+
+/* Landscape board: 15 pin columns; rows are top labels | top pins | board body | bottom pins | bottom labels */
+.scroll { overflow-x: auto; padding-bottom: 4px; }
+.board { display: grid; grid-template-columns: repeat(15, minmax(44px, 1fr));
+  grid-template-rows: auto 24px 150px 24px auto; row-gap: 6px; min-width: 700px; padding: 0 14px; }
+.lbl.T, .lbl.B { writing-mode: vertical-rl; justify-self: center; white-space: nowrap; }
+.lbl.T { transform: rotate(180deg); align-self: end; }
+.lbl.B { align-self: start; }
+.lbl.T small, .lbl.B small { overflow-wrap: normal; }
+
+.pcb { grid-column: 1 / 16; grid-row: 2 / 5; background: var(--pcb); border: 2px solid var(--pcb-edge);
+  border-radius: 6px; margin: 0 -14px; position: relative; }
+.screen { position: absolute; top: 34px; bottom: 34px; left: 22%; right: 14%;
+  background: var(--lcd); border-radius: 3px; border: 3px solid #000;
+  display: flex; align-items: center; justify-content: center;
+  color: #6f8f88; font: 600 0.7rem var(--mono); letter-spacing: 0.1em; }
+.ant { position: absolute; top: 30%; bottom: 30%; right: 3%; width: 6%;
+  border: 2px solid var(--pad); border-right: none; opacity: 0.7; }
+.usb { position: absolute; top: 38%; bottom: 38%; left: -10px; width: 20px;
+  background: #b9c0c6; border: 2px solid #7d858c; border-radius: 4px; }
+.btn { position: absolute; left: 7%; width: 16px; height: 16px; border-radius: 50%;
+  background: #222; border: 2px solid #555; }
+.btn.t { top: 34px; } .btn.b { bottom: 34px; }
+.btn-lbl { position: absolute; left: calc(7% + 22px); font: 600 0.58rem var(--mono); color: #c8d3dc; }
+.btn-lbl.t { top: 36px; } .btn-lbl.b { bottom: 36px; }
+.edge-lbl { position: absolute; font: 600 0.6rem var(--mono); letter-spacing: 0.08em; color: #9fb2c4;
+  text-transform: uppercase; top: 50%; transform: translateY(-50%); }
+.edge-lbl.usbl { left: 16px; } .edge-lbl.antl { right: 9%; }
+
+.pin { z-index: 1; align-self: center; justify-self: center; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--pad); border: 3px solid var(--pcb-edge); position: relative; }
+.pin::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--pcb-edge); }
+.pin.hot { box-shadow: 0 0 0 3px var(--wire); }
+.pin.hot.pwr { box-shadow: 0 0 0 3px var(--pwr); }
+.pin.hot.gnd { box-shadow: 0 0 0 3px var(--gnd); }
+
+.check { background: var(--pwr-bg); border: 1.5px solid var(--pwr); border-radius: 8px;
+  padding: 12px 14px; line-height: 1.5; font-size: 0.92rem; }
+.check strong { color: var(--pwr); }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+.tbl { overflow-x: auto; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td code { font-family: var(--mono); font-weight: 600; }
+td input { width: 18px; height: 18px; accent-color: var(--wire); }
+
+/* DIP-14 chip */
+.chipwrap { display: flex; justify-content: center; }
+.chip { display: grid; grid-template-columns: minmax(0,1fr) 18px 120px 18px minmax(0,1fr);
+  grid-template-rows: repeat(7, 32px); column-gap: 6px; width: 100%; max-width: 520px; }
+.chip .lbl { align-self: center; }
+.chip .lbl.L { text-align: right; align-items: flex-end; }
+.chip .lbl.R { text-align: left; align-items: flex-start; }
+.body { grid-column: 3; grid-row: 1 / 8; background: var(--chip); border-radius: 4px; position: relative;
+  color: #c9ced2; font: 600 0.7rem var(--mono); display: flex; align-items: center; justify-content: center;
+  writing-mode: vertical-rl; letter-spacing: 0.08em; }
+.notch { position: absolute; top: -1px; left: 50%; width: 24px; height: 12px; transform: translateX(-50%);
+  background: var(--bg); border-radius: 0 0 12px 12px; }
+.dot1 { position: absolute; top: 14px; left: 10px; width: 8px; height: 8px; border-radius: 50%; background: #6c7378; }
+.leg { align-self: center; height: 8px; background: #a8b0b6; border-radius: 1px; }
+
+@page { size: A4 landscape; margin: 12mm; }
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wrap { max-width: none; padding: 0; gap: 18px; }
+  .scroll { overflow: visible; }
+  .board { min-width: 0; }
+  .pagebreak { break-before: page; }
+  section { break-inside: avoid; }
+  td input { display: none; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>LED controller pinout</h1>
+    <p class="sub">diymore ESP32 + 1.9" LCD, seen from above with the screen facing you, USB-C on the left and the antenna on the right. Pins are numbered T1–T15 along the top and B1–B15 along the bottom, counting from the USB end.</p>
+  </header>
+
+  <div class="check">
+    <strong>Check the orientation before wiring.</strong> Plug in USB only, then meter the two pins nearest the USB socket against GND. Top-left (T1, VIN) should read about 4.7–5V and bottom-left (B1) should read 3.3V. If they're the other way round, the board is upside down compared with this drawing.
+  </div>
+
+  <div class="legend">
+    <span><i class="sw" style="background:var(--wire-bg);border-color:var(--wire)"></i>You wire this</span>
+    <span><i class="sw" style="background:var(--pwr-bg);border-color:var(--pwr)"></i>Power</span>
+    <span><i class="sw" style="background:var(--gnd-bg);border-color:var(--gnd)"></i>Ground</span>
+    <span><i class="sw" style="background:var(--lcdpin-bg);border-color:var(--lcdpin)"></i>Used by the onboard LCD, leave alone</span>
+    <span><i class="sw" style="background:transparent;border-color:var(--line)"></i>Not used</span>
+  </div>
+
+  <div class="scroll"><div class="board" id="board">
+    <div class="pcb">
+      <div class="usb"></div>
+      <span class="btn t"></span><span class="btn b"></span>
+      <span class="btn-lbl t">EN</span><span class="btn-lbl b">BOOT</span>
+      <div class="screen">LCD</div>
+      <div class="ant"></div>
+    </div>
+  </div></div>
+
+  <section class="pagebreak">
+    <h2>Connections to make</h2>
+    <div class="tbl"><table>
+      <thead><tr><th></th><th>Board pin</th><th>Goes to</th></tr></thead>
+      <tbody>
+        <tr><td><input type="checkbox" id="c1" aria-label="done"></td><td><code>T3 GPIO13</code></td><td>74AHCT125 pin 2 (1A)</td></tr>
+        <tr><td><input type="checkbox" id="c2" aria-label="done"></td><td><code>T9 GPIO33</code></td><td>Encoder CLK</td></tr>
+        <tr><td><input type="checkbox" id="c3" aria-label="done"></td><td><code>T6 GPIO27</code></td><td>Encoder DT</td></tr>
+        <tr><td><input type="checkbox" id="c4" aria-label="done"></td><td><code>T5 GPIO14</code></td><td>Encoder SW</td></tr>
+        <tr><td><input type="checkbox" id="c5" aria-label="done"></td><td><code>B1 3.3V</code></td><td>Encoder VCC (+)</td></tr>
+        <tr><td><input type="checkbox" id="c6" aria-label="done"></td><td><code>T2 GND</code></td><td>Encoder GND, 74AHCT125 pin 7, buck OUT−, strip GND</td></tr>
+        <tr><td><input type="checkbox" id="c7" aria-label="done"></td><td><code>T1 VIN</code></td><td>74AHCT125 pin 14. Buck OUT+ (5.0V) only when running without USB</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>SN74AHCT125N, from above</h2>
+    <p class="sub" style="margin:0 0 12px">Notch at the top. Pin 1 is top-left beside the dot; numbering runs down the left and back up the right.</p>
+    <div class="chipwrap"><div class="chip" id="chip">
+      <div class="body"><span class="notch"></span><span class="dot1"></span>74AHCT125</div>
+    </div></div>
+    <p class="sub">0.1µF capacitor across pins 14 and 7, as close to the chip as you can get it. 330Ω from pin 3 to strip DIN.</p>
+  </section>
+</div>
+
+<script>
+// Left to right, USB end first.
+const topRow = [
+  ["VIN 5V", "Chip 14 / buck OUT+", "pwr"],
+  ["GND", "Common ground", "gnd"],
+  ["GPIO13", "LED data → chip 2", "wire"],
+  ["GPIO12", "Avoid (boot pin)", "off"],
+  ["GPIO14", "Encoder SW", "wire"],
+  ["GPIO27", "Encoder DT", "wire"],
+  ["GPIO26", "Free", "off"],
+  ["GPIO25", "Free", "off"],
+  ["GPIO33", "Encoder CLK", "wire"],
+  ["GPIO32", "LCD backlight", "lcd"],
+  ["GPIO35", "Input only", "off"],
+  ["GPIO34", "Input only", "off"],
+  ["VN", "GPIO39, input only", "off"],
+  ["VP", "GPIO36, input only", "off"],
+  ["EN", "Reset", "off"],
+];
+const bottomRow = [
+  ["3.3V", "Encoder VCC", "pwr"],
+  ["GND", "Ground", "gnd"],
+  ["GPIO15", "LCD CS", "lcd"],
+  ["GPIO2", "LCD DC", "lcd"],
+  ["GPIO4", "LCD RST", "lcd"],
+  ["GPIO16", "Free", "off"],
+  ["GPIO17", "Free", "off"],
+  ["GPIO5", "Free (boot pin)", "off"],
+  ["GPIO18", "LCD SCLK", "lcd"],
+  ["GPIO19", "Free", "off"],
+  ["GPIO21", "Free", "off"],
+  ["GPIO3", "RX0, USB serial", "off"],
+  ["GPIO1", "TX0, USB serial", "off"],
+  ["GPIO22", "Free", "off"],
+  ["GPIO23", "LCD MOSI", "lcd"],
+];
+const board = document.getElementById("board");
+function add(parent, cls, row, col, html) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.style.gridRow = row;
+  el.style.gridColumn = col;
+  if (html) el.innerHTML = html;
+  parent.appendChild(el);
+}
+topRow.forEach(([name, role, kind], i) => {
+  const hot = kind === "wire" || kind === "pwr" || kind === "gnd";
+  add(board, `lbl T ${kind}`, 1, i + 1, `<b>${name}</b><small>${role}</small><span class="n">T${i + 1}</span>`);
+  add(board, `pin${hot ? " hot " + kind : ""}`, 2, i + 1);
+});
+bottomRow.forEach(([name, role, kind], i) => {
+  const hot = kind === "wire" || (kind === "pwr" && name === "3.3V");
+  add(board, `pin${hot ? " hot " + kind : ""}`, 4, i + 1);
+  add(board, `lbl B ${kind}`, 5, i + 1, `<b>${name}</b><small>${role}</small><span class="n">B${i + 1}</span>`);
+});
+
+const chipLeft = [
+  ["1 · 1OE", "GND", "gnd"], ["2 · 1A", "GPIO13", "wire"], ["3 · 1Y", "330Ω → DIN", "wire"],
+  ["4 · 2OE", "5V", "pwr"], ["5 · 2A", "GND", "gnd"], ["6 · 2Y", "No connection", "off"], ["7 · GND", "GND", "gnd"],
+];
+const chipRight = [
+  ["14 · VCC", "5V (VIN)", "pwr"], ["13 · 4OE", "5V", "pwr"], ["12 · 4A", "GND", "gnd"],
+  ["11 · 4Y", "No connection", "off"], ["10 · 3OE", "5V", "pwr"], ["9 · 3A", "GND", "gnd"], ["8 · 3Y", "No connection", "off"],
+];
+const chip = document.getElementById("chip");
+chipLeft.forEach(([pin, to, kind], i) => {
+  add(chip, `lbl L ${kind}`, i + 1, 1, `<b>${pin}</b><small>${to}</small>`);
+  add(chip, "leg", i + 1, 2);
+});
+chipRight.forEach(([pin, to, kind], i) => {
+  add(chip, "leg", i + 1, 4);
+  add(chip, `lbl R ${kind}`, i + 1, 5, `<b>${pin}</b><small>${to}</small>`);
+});
+</script>

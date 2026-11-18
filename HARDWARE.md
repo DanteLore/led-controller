@@ -2,13 +2,15 @@
 
 > **Reference document.** The board, LCD and encoder sections come from bt-mixer, where they were confirmed working.
 
+> **Bench pinout:** [pinout.pdf](pinout.pdf) (A4 landscape, generated from [pinout.html](pinout.html)) shows the board top-down with USB on the left, pins numbered T1–T15 / B1–B15 from the USB end, plus the 74AHCT125 pin map. Header layout confirmed against the real board on 2026-11-18 (it labels GPIO36/39 as VP/VN). To regenerate: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=pinout.pdf "file://$PWD/pinout.html"`
+
 ---
 
 ## Overview
 
 | Part | Detail |
 |------|--------|
-| Controller | diymore ESP32-WROOM-32 with 1.9" ST7789V2 LCD |
+| Controller | diymore ESP32-WROOM-32 with 1.9" ST7789V2 LCD (HW-463C DevKit V1 as a stand-in for now) |
 | Input | KY-040 rotary encoder with push button |
 | Strip | 24V addressable strip offcut, Sunmoon **SM16703SP3** driver ICs (WS2811 protocol, 800kHz) |
 | Level shifter | **SN74AHCT125N** (DIP-14), 3.3V → 5V on the data line |
@@ -23,14 +25,16 @@ Status as of 2026-11-17: level shifters, capacitors and buck converters on order
 
 | Item | Part | Qty | Status | Purpose |
 |------|------|-----|--------|---------|
-| Controller | diymore ESP32 + 1.9" LCD | 1 | Have (from bt-mixer) | |
+| Controller | diymore ESP32 + 1.9" LCD | 1 | Have (from bt-mixer) — replacement screen on order | |
+| Stand-in controller | HW-463C ESP32 DevKit V1 | 1 | Have | Used until parts arrive |
 | Encoder | KY-040 | 1 | Have (from bt-mixer) | Brightness / mode |
 | Strip | 24V SM16703SP3 offcut | 1 | Have | Pads: 24V, DIN, GND |
-| Level shifter | SN74AHCT125N, DIP-14 (PENGLIN 10-pack) | 1 | Ordered | Data line 3.3V → 5V |
+| Test strip | 10-LED piece cut from the offcut | 1 | Have | Bench testing |
+| Level shifter | SN74AHCT125N, DIP-14 (PENGLIN 10-pack) | 1 | Have — not used; first attempt garbled data and direct 3.3V works on the bench | Data line 3.3V → 5V |
 | Decoupling cap | 0.1µF ceramic | 1 | Ordered | Across 74AHCT125 pins 14 and 7 |
 | Buck converter | LM2596 adjustable module (5-pack), 3–40V in | 1 | Ordered | 24V → 5V for ESP32 VIN |
 | Series resistor | 330Ω | 1 | Have | Data line, at the shifter output |
-| Bulk cap | 1000µF electrolytic, **35V+** | 1 | To get | Across 24V/GND at strip input |
+| Bulk cap | 1000µF electrolytic, **35V+** | 1 | Fitted (stripe to GND) | Across 24V/GND at strip input |
 | Fuse | Inline holder + 3–5A fuse | 1 | To get | 24V feed |
 | PSU | 24V, sized from strip W/m × length + 30% | 1 | To get / borrow | Strip power |
 | Nice to have | DC barrel → screw terminal, 14-pin DIP socket, stripboard, 3-pin JST SM pair, heat-shrink | | To get | Assembly |
@@ -55,7 +59,9 @@ Testing direct 3.3V first is safe, provided the strip's 24V pad goes nowhere nea
 | 5, 9, 12 | 2A, 3A, 4A | GND (unused inputs must not float) |
 | 4, 10, 13 | 2OE, 3OE, 4OE | 5V (disables unused outputs) |
 
-Fit the 0.1µF capacitor across pins 14 and 7, as close to the chip as possible. Generic-brand chips: if 1Y doesn't reach about 5V with GPIO13 high, try another from the pack.
+Fit the 0.1µF capacitor across pins 14 and 7, as close to the chip as possible.
+
+**Bench result (2026-11-18):** with the shifter in circuit the first pixel flickered white/blue/green and the rest froze on random colours; with the shifter removed, direct 3.3V data worked. Shelved for now. If it's revisited, first check the chip straddles the breadboard's centre gap (otherwise opposite pins short: 2↔13, 3↔12), then a static test: pin 2 to 3V3 → pin 3 ≈ 4.7V, pin 2 to GND → pin 3 ≈ 0V. Other checks: pin 14–7 reads ~4.7V, pin 1 really at GND, pins 2/3 not swapped, decoupling cap fitted, breadboard contacts, try another chip. Generic-brand chips: if 1Y doesn't reach about 5V with GPIO13 high, try another from the pack.
 
 ### Buck converter — LM2596, not MP1584
 
@@ -84,6 +90,28 @@ The strip takes 24V straight from the PSU; it never goes through the buck conver
 ### Data pin — GPIO13
 
 Free on this board, not a strapping pin, and not shared with the LCD's SPI pins (GPIO18/23).
+
+---
+
+## Stand-in Board — ESP32 DevKit V1 (HW-463C)
+
+Used while the LCD board's parts are on order. 30-pin NodeMCU-style DevKit V1: ESP32-WROOM-32, CP2102 USB-serial, AMS1117 3.3V regulator, USB-C. Same layout as the AITRIP channel board in bt-mixer.
+
+This is the default `BOARD` in `flash.sh`. It turns off `CONFIG_LED_CONTROLLER_LCD`, so mode and brightness changes are logged to the serial monitor instead of drawn on a screen. Pin numbers are the same as the LCD board, so `main.c` doesn't change.
+
+| Header label | GPIO | Connect to |
+|---|---|---|
+| D13 | GPIO13 | Currently direct: 330Ω → strip DIN (works on the short bench wire). Target: 74AHCT125 pin 2 (1A); pin 3 (1Y) → 330Ω → strip DIN |
+| VIN | — | 74AHCT125 pin 14 (VCC). On USB power VIN outputs about 4.7V, within the AHCT's 4.5–5.5V range |
+| D33 | GPIO33 | KY-040 CLK |
+| D27 | GPIO27 | KY-040 DT |
+| D14 | GPIO14 | KY-040 SW |
+| 3V3 | — | KY-040 VCC (+) |
+| GND | — | KY-040 GND, strip GND |
+
+- **Power:** USB only for now. Later, LM2596 OUT+ → VIN (5V in, through the onboard AMS1117) — never VIN and USB together.
+- **Serial port:** the CP2102 shows up as `/dev/cu.usbserial-0001` (macOS built-in driver); `flash.sh` finds it automatically.
+- **Onboard blue LED** is on GPIO2, which is unused in the DevKit build.
 
 ---
 

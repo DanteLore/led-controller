@@ -1,0 +1,2 @@
+# Plain 30-pin ESP32 DevKit V1 (HW-463C), no display
+# CONFIG_LED_CONTROLLER_LCD is not set

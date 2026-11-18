@@ -68,10 +68,13 @@ void encoder_init(int pin_clk, int pin_dt, int pin_sw)
     accumulated = 0;
     last_detent_cycles = 0;
 
+    // Internal pull-ups on all three: many KY-040 boards leave the SW pull-up
+    // unfitted, so the button floats and reads as random presses. Harmless in
+    // parallel with the onboard 10k on CLK/DT.
     gpio_config_t io = {
         .pin_bit_mask = (1ULL << pin_clk) | (1ULL << pin_dt) | (1ULL << pin_sw),
         .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,   // KY-040 has onboard pull-ups
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
