@@ -16,13 +16,19 @@ led-controller/
 ├── sdkconfig.devkit     ← extra defaults for the DevKit V1 (LCD off)
 ├── main/
 │   ├── main.c           ← UI, main loop, output
-│   ├── effects.c/h      ← all effects, time-based, 16-bit perceptual colour
+│   ├── presets.json     ← built-in patch library, compiled in
+│   ├── library.c/h      ← the patch library: saved in NVS, or the presets; the editor's draft
+│   ├── web.c/h          ← patch editor page (editor.html) and its JSON API
+│   ├── effects.c/h      ← RGB TEST and DIM TEST, kept in C
 │   └── Kconfig.projbuild ← LED_CONTROLLER_LCD option
 ├── components/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
 │   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
+│   ├── patch/           ← patch engine: patch.c (render), patch_json.c (read), patch.js
+│   │                      (JavaScript copy for the editor), test/run.sh (checks they agree)
 │   └── wifi/            ← joins WiFi, setup hotspot, captive DNS, setup page (setup.html)
+├── tools/editor_server.py ← runs the editor on the Mac with a pretend controller
 ├── HARDWARE.md          ← pinouts, strip wiring, power, parts and design decisions
 ├── pinout.html / .pdf   ← printable bench wiring card for the diymore LCD board
 └── README.md            ← this file
@@ -54,15 +60,26 @@ See HARDWARE.md for full details.
 
 Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). Direct 3.3V data (D13 → 330Ω → DIN) works: RGB TEST shows red, green, blue thirds, and everything runs at a steady 200fps. With the 74AHCT125 in circuit the first pixel flickered and the rest froze, so the shifter has been left out for now; direct 3.3V is the working setup. The KY-040 encoder is connected (CLK D33, DT D27, SW D14, + 3V3). `LED_ORDER` (BRG) is confirmed correct on this strip. The diymore LCD board is waiting on a replacement screen; the `lcd` build compiles but hasn't run on hardware.
 
-- **Button:** next mode (each starts from its beginning). **Knob:** speed in moving modes, brightness in the rest. `STARTUP_MODE` in `main.c` picks the first mode.
+- **Button:** next mode (each starts from its beginning): the patches in the library in order, then RGB TEST and DIM TEST. **Knob:** speed or brightness, as each patch says. `STARTUP_MODE` in `main.c` picks the first mode.
+
+Modes are patches (see **Patches** below), edited from a phone or laptop. The presets:
+
+| Patch | Knob | What it does |
+|---|---|---|
+| Demo | Brightness | Playlist: Rainbow speeding up from 0.5x to 10x, then Pulse, then Whites, 30s each. Step changes are logged |
+| Rainbow | Speed | Scrolling rainbow, one cycle per 5s at 1x |
+| Pulse | Speed | Warm white easing full → dark → full, 6s at 1x |
+| Embers | Speed | Each LED glows and fades on its own, deep orange when dim to gold when bright |
+| Candle | Speed | Fast flicker over a slow sway, orange to yellow (new, not yet seen on the strip) |
+| Ocean | Speed | Blues and teals with waves travelling both ways (new, not yet seen on the strip) |
+| Warm | Brightness | Steady warm white |
+| Whites | Speed | Whole strip easing warm white → cool white → warm over 30s |
+| Pattern | Speed | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
+
+Always after the patches, in C:
 
 | Mode | Knob | What it does |
 |---|---|---|
-| DEMO | Brightness | 90s loop of three 30s segments: rainbow accelerating from 0.1 to 2 cycles/s → warm white pulsing full → dark → full every 6s → whole strip easing warm white → cool white → warm. Segment changes are logged |
-| RAINBOW | Speed | Scrolling rainbow, one cycle per 5s at 1x |
-| PULSE | Speed | Warm white easing full → dark → full, 6s at 1x |
-| WARM | Brightness | Steady warm white |
-| PATTERN | Speed | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
 | RGB TEST | Brightness | Red, green, blue thirds from the input end, to check `LED_ORDER` |
 | DIM TEST | Speed | Full white at full scale (ignores brightness): 5s static gradient, then 10s fade out and 10s fade in. Each phase is logged |
 
@@ -71,6 +88,12 @@ Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). 
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
 - LCD shows the mode, whichever setting the knob controls (with a bar), and a live preview of the strip
 - Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`, `HOSTNAME`
+
+### Patch editor
+
+Browse to the board's address (logged on serial once it joins WiFi). The page shows the library as live previews; click one to edit it. It has a big preview with a history view (each LED a column, newest at the top) and a brightness graph, then the patch's settings. "Show edits on the strip as I make them" plays the unsaved version on the strip (the screen says EDIT; the button goes back to the saved one). **Save to device** keeps it in flash; Download and Upload move libraries around as JSON files; Reset to presets loads the built-in ones (saving makes it stick). The page also sets brightness and plays any saved patch. It works on a phone (single column).
+
+To work on the page without the board: `tools/editor_server.py`, then open `http://localhost:8000/`. It serves the same files with a pretend controller.
 
 ### WiFi
 
@@ -82,6 +105,35 @@ Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). 
 - **Changing network** from home: the setup page is also at `http://<board address>/wifi` (the root redirects there until there's a control page)
 - Security: the hotspot is open, and anyone on the home network can reach the setup page. Fine for a lamp; revisit before it controls anything that matters
 - Tested on the DevKit with an Android phone (2026-11-19): popup, scan, join, hotspot closing after a minute, and rejoining on reboot all work. Not yet tried from an iPhone
+
+## Patches
+
+A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8KB. `main/presets.json` is the reference. Each LED's brightness ("glow") comes from one or two oscillators, shaped; its colour is a palette position, picked by the glow or by a colour oscillator. Anything left out takes the default.
+
+```json
+{ "name": "Embers",                       // 1–16 characters, shown on the LCD
+  "knob": "speed",                        // or "brightness"
+  "glow": {                               // leave out for always full
+    "a": { "shape": "sine", "period": [3, 9], "scatter": 1 },
+    "b": { "shape": "sine", "period": [3, 9], "scatter": 1 },
+    "mix": "blend", "balance": 0.6,       // balance = share of a; or "mix": "multiply"
+    "power": 2, "floor": 0.15, "ceiling": 1
+  },
+  "colour": {
+    "palette": ["#FF3A00", "#FF940C"],    // 1–12 colours
+    "blend": "smooth",                    // or "steps"
+    "wrap": false,                        // last colour blends back to the first
+    "source": "glow"                      // or "osc", with "osc": { ... } for the colour
+  } }
+```
+
+- **Oscillator:** `shape` sine | triangle | saw | square | noise (default sine), `period` seconds (default 1; 0 holds still; `[shortest, longest]` gives each LED its own), `phase` start point in cycles, `spread` cycles across the strip (the wave travels; minus goes the other way), `scatter` 0–1 random start point per LED. All give 0–1: sine, triangle and square start at 0 and peak half way; saw ramps up; noise eases between random values once per period
+- **Glow:** a, or a and b blended or multiplied, raised to `power` (above 1 lingers dim), then scaled to `floor`…`ceiling`. That is the LED's brightness
+- **Colour:** with `"source": "glow"` the shaped glow (before floor and ceiling) picks the palette position, so dim LEDs get the first colour. Smooth blends happen in linear light so mixes stay equal-power
+- **Playlist:** `{"name": "Demo", "playlist": [{"patch": "Rainbow", "secs": 30, "speed": [0.5, 10]}, ...]}` plays other patches in turn; `speed` is a number or `[start, end]` for a ramp. Knob defaults to brightness. Playlists can't play playlists
+- "Random" values come from hashing the LED's position, so they're fixed per LED and nothing is stored: the whole patch is a function of time, like the old effects
+- The engine is C in `components/patch/` (no ESP-IDF calls apart from cJSON) and `patch.js` is a line-for-line JavaScript copy for the editor's preview. After changing either, run `components/patch/test/run.sh`: it builds the C on the Mac, renders the presets with both and checks they agree, and checks both reject the files in `test/bad/` with the same message
+- Effect time is a 32-bit ms count, so a patch jumps once every 49 days (6 days at 8x)
 
 ## Key architectural decisions
 
@@ -114,12 +166,13 @@ Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). 
 
 ### Main loop
 - Single loop at 200fps in the LED task (`vTaskDelayUntil`, 5ms): read encoder → render effect → apply brightness → push to strip; LCD preview every 4th frame
-- Effects are pure functions of effect time (ms), so motion speed doesn't depend on frame rate, and speed control lives entirely in the main loop
-- Effects render 16-bit perceptual RGB into `frame[]`; the LCD preview reads the same buffer before brightness is applied
+- Patches are pure functions of effect time (ms), so motion speed doesn't depend on frame rate, and speed control lives entirely in the main loop
+- Patches render 16-bit perceptual RGB into `frame[]`; the LCD preview reads the same buffer before brightness is applied
+- The library is read once into structs (`patch_set_t`); the render loop never touches JSON. The web server parses into a spare copy and swaps it in under the library's mutex, which the LED task holds while it renders. Mode changes and brightness from the page go through a queue to the LED task, which owns the settings
 
 ## What to work on next
 
-1. **WiFi:** test the setup flow on hardware, then a control web page (mode, brightness, speed) on `wifi_web_server()`, then possibly MQTT for Home Assistant (ESP-IDF has a built-in MQTT client). A `led-controller.local` name would need mDNS, which is a managed component in ESP-IDF 5.x
+1. **WiFi:** possibly MQTT for Home Assistant (ESP-IDF has a built-in MQTT client). A `led-controller.local` name would need mDNS, which is a managed component in ESP-IDF 5.x
 2. When the replacement screen arrives: move to the diymore LCD board (`BOARD=lcd`) and do more on light control — on-screen UI, more effects (solid colour, chase, fire, twinkle), and the low-end floor options above
 3. Persist settings (mode, brightness, per-mode speed) to NVS, saved 2s after the knob stops (bt-mixer pattern)
 4. Set `LED_COUNT` for the full offcut once it's in use; it's 10 for the bench test piece

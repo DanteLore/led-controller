@@ -87,12 +87,6 @@ static esp_err_t redirect(httpd_req_t *req, const char *url)
     return httpd_resp_send(req, NULL, 0);
 }
 
-// No control page yet, so the root goes to WiFi setup
-static esp_err_t root_get(httpd_req_t *req)
-{
-    return redirect(req, "/wifi");
-}
-
 static esp_err_t page_get(httpd_req_t *req)
 {
     log_request(req);
@@ -195,9 +189,9 @@ httpd_handle_t setup_page_start(const char *setup_url)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.core_id = 0;               // core 1 is kept for the LEDs
     config.lru_purge_enable = true;   // phones open lots of connections while probing
+    config.max_uri_handlers = 16;     // room for the patch editor's routes too
     ESP_ERROR_CHECK(httpd_start(&server, &config));
 
-    add(server, "/",            HTTP_GET,  root_get);
     add(server, "/wifi",        HTTP_GET,  page_get);
     add(server, "/wifi/status", HTTP_GET,  status_get);
     add(server, "/wifi/scan",   HTTP_GET,  scan_get);

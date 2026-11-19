@@ -1,0 +1,17 @@
+#pragma once
+
+// What the web server can ask of the LED task, which owns the settings
+
+#include <stdbool.h>
+
+typedef struct {
+    int mode;           // patch index, then the tests after the last patch
+    bool draft;         // playing the web editor's draft instead
+    int brightness;     // 0–100
+    float speed;        // multiplier from the knob, for the mode playing
+    int leds;
+} control_state_t;
+
+void control_select(int mode);
+void control_set_brightness(int brightness);
+void control_get_state(control_state_t *state);

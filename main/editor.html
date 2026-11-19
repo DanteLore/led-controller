@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Patches</title>
+<style>
+  :root { color-scheme: dark; --bg: #111113; --card: #1c1c20; --raised: #26262b; --text: #f4f4f5; --dim: #a1a1aa;
+          --line: #34343a; --accent: #f59e0b; --accent-text: #1c1300; --bad: #f87171; --good: #4ade80; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { color-scheme: light; --bg: #f4f4f5; --card: #fff; --raised: #f4f4f5; --text: #18181b;
+          --dim: #71717a; --line: #d4d4d8; --accent: #d97706; --accent-text: #fff; --bad: #dc2626; --good: #16a34a; }
+  }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.3em; margin: 0; }
+  h2 { font-size: 1em; color: var(--dim); font-weight: 600; margin: 22px 0 8px; }
+  a { color: var(--accent); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.small { padding: 3px 8px; font-size: 0.85em; }
+  input[type=text], input[type=number], select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+  input[type=number] { width: 5.5em; }
+  input[type=range] { flex: 1; min-width: 80px; accent-color: var(--accent); }
+  .dim { color: var(--dim); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+
+  header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #strip-status { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex: 1; min-width: 260px; }
+  #strip-status .label { color: var(--dim); }
+  #strip-status input[type=range] { max-width: 160px; }
+  .tag { font-size: 0.75em; padding: 1px 6px; border-radius: 4px; background: var(--raised); color: var(--dim); }
+  .tag.edit { background: var(--accent); color: var(--accent-text); }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card canvas { width: 100%; height: 22px; border-radius: 4px; background: #000; display: block; }
+  .card .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .playing { color: var(--good); font-size: 0.8em; }
+  #library-actions { margin-top: 10px; }
+
+  #editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 800px) { #editor { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  #preview-panel { position: sticky; top: 8px; }
+  @media (max-width: 800px) { #preview-panel { position: static; } }
+  #strip { width: 100%; height: 56px; background: #000; border-radius: 6px; display: block; }
+  #history { width: 100%; height: 150px; background: #000; border-radius: 6px; display: block; image-rendering: pixelated; }
+  #scope { width: 100%; height: 90px; background: #000; border-radius: 6px; display: block; }
+  #timeline { width: 100%; height: 28px; display: block; border-radius: 4px; }
+  .caption { font-size: 0.8em; color: var(--dim); margin: 8px 0 3px; display: flex; justify-content: space-between; }
+  .legend span { margin-left: 8px; }
+
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; margin: 0 0 12px; min-width: 0; }
+  legend { color: var(--dim); font-weight: 600; padding: 0 4px; }
+  fieldset fieldset { background: var(--raised); }
+  .field { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 4px 8px; align-items: center; margin: 5px 0; }
+  .field > label { color: var(--dim); }
+  .field .hint { grid-column: 2; font-size: 0.8em; color: var(--dim); margin-top: -2px; }
+  .check { display: flex; gap: 6px; align-items: center; margin: 6px 0; cursor: pointer; }
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .swatch { position: relative; }
+  .swatch input { width: 38px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+  .swatch button { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; }
+  #palette-bar { width: 100%; height: 18px; border-radius: 4px; display: block; margin-top: 8px; }
+  .step { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 6px; align-items: center; margin: 6px 0; }
+  .step input[type=number] { width: 4.5em; }
+  #problem { background: color-mix(in srgb, var(--bad) 18%, transparent); border: 1px solid var(--bad); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+  #problem:empty { display: none; }
+  #save-bar { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px; margin-top: 20px; }
+  #save-bar .inner { max-width: 1100px; margin: 0 auto; }
+  #json { width: 100%; height: 300px; font: 12px/1.4 ui-monospace, monospace; }
+  #message { min-height: 1.4em; }
+  .bad { color: var(--bad); }
+  .good { color: var(--good); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LED Patches</h1>
+    <div id="strip-status">
+      <span class="label">Strip</span>
+      <span id="now-playing" class="dim">Connecting…</span>
+      <span class="spacer"></span>
+      <label class="row"><span class="label">Brightness</span>
+        <input id="brightness" type="range" min="0" max="100" disabled>
+        <span id="brightness-value" class="dim"></span></label>
+      <a href="/wifi">WiFi</a>
+    </div>
+  </header>
+
+  <h2>Library <span class="dim" style="font-weight:400">· click one to edit it, ▶ plays the saved version on the strip</span></h2>
+  <div id="cards"></div>
+  <div id="library-actions" class="row">
+    <button id="new-patch">New patch</button>
+    <button id="new-playlist">New playlist</button>
+    <span class="spacer"></span>
+    <button id="download">Download</button>
+    <button id="upload">Upload…</button>
+    <input id="upload-file" type="file" accept=".json,application/json" hidden>
+    <button id="reset">Reset to presets…</button>
+  </div>
+
+  <h2 id="editor-title">Edit</h2>
+  <div id="editor">
+    <div class="panel" id="preview-panel">
+      <canvas id="strip"></canvas>
+      <div class="caption"><span>History: newest at the top, each LED a column</span><span id="history-span"></span></div>
+      <canvas id="history"></canvas>
+      <div class="caption"><span>Brightness over time</span>
+        <span class="legend"><span style="color:#fbbf24">■ first LED</span><span style="color:#60a5fa">■ middle</span><span style="color:#f472b6">■ last</span></span></div>
+      <canvas id="scope"></canvas>
+      <div id="timeline-wrap" hidden>
+        <div class="caption"><span>Playlist</span><span id="timeline-now"></span></div>
+        <canvas id="timeline"></canvas>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="speed">Speed</label>
+        <div class="row"><input id="speed" type="range" min="-15" max="15" step="1" value="0"><span id="speed-value" class="dim">1.00x</span></div>
+        <div class="hint">Like the knob on the device: preview only, not saved.</div></div>
+      <div class="field"><label for="led-count">LEDs</label>
+        <div class="row"><input id="led-count" type="number" min="1" max="300"><span class="dim" id="led-count-hint"></span></div></div>
+      <label class="check"><input id="live" type="checkbox"> Show edits on the strip as I make them</label>
+    </div>
+    <div>
+      <div id="problem"></div>
+      <div id="fields"></div>
+      <div class="row">
+        <button id="duplicate">Duplicate</button>
+        <button id="move-up">Move up</button>
+        <button id="move-down">Move down</button>
+        <span class="spacer"></span>
+        <button id="delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <details id="json-details" style="margin-top:20px">
+    <summary class="dim">Library as JSON</summary>
+    <p class="dim">The whole library, as saved on the device. Edit it here or in a text editor, then Apply.</p>
+    <textarea id="json" spellcheck="false"></textarea>
+    <div class="row"><button id="json-apply">Apply</button></div>
+  </details>
+</main>
+
+<div id="save-bar"><div class="inner row">
+  <span id="message" class="dim"></span>
+  <span class="spacer"></span>
+  <span id="size" class="dim"></span>
+  <button id="discard" disabled>Discard changes</button>
+  <button id="save" class="primary" disabled>Save to device</button>
+</div></div>
+
+<script src="patch.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const JSON_MAX = 8192;
+const HISTORY_ROWS = 150, HISTORY_SAMPLE_MS = 40;   // 6 seconds of history
+
+let lib = null;          // the library being edited, as plain JSON
+let savedText = '';      // what the device has, to spot unsaved changes
+let set = null;          // lib, read by patch.js: the last version without problems
+let problem = '';
+let selected = 0;
+let device = null;       // last /api/state, or null if the controller can't be reached
+let ledCount = 10;
+let live = false, liveSince = 0;
+let speedSteps = 0;
+
+// ---- Talking to the controller -------------------------------------------
+
+async function api(method, path, body) {
+  const r = await fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body),
+                                headers: body === undefined ? {} : { 'Content-Type': 'application/json' } });
+  const text = await r.text();
+  if (!r.ok) throw new Error(text || r.statusText);
+  return text;
+}
+
+async function refreshState() {
+  try {
+    device = JSON.parse(await api('GET', '/api/state'));
+  } catch (e) {
+    device = null;
+  }
+  showDevice();
+}
+
+function showDevice() {
+  const playing = $('now-playing');
+  const b = $('brightness');
+  if (!device) {
+    playing.textContent = 'Not connected: preview only';
+    b.disabled = true;
+    return;
+  }
+  const name = device.modes[device.mode] || '';
+  const editing = lib && lib.patches[selected] ? lib.patches[selected].name : '';
+  playing.replaceChildren(document.createTextNode(device.draft ? editing : name));
+  if (device.draft) playing.append(' ', Object.assign(document.createElement('span'), { className: 'tag edit', textContent: 'EDIT' }));
+  if (document.activeElement !== b) b.value = device.brightness;
+  b.disabled = false;
+  $('brightness-value').textContent = device.brightness + '%';
+  // The device stops the draft when its button is pressed
+  if (live && !device.draft && Date.now() - liveSince > 4000) setLive(false);
+  updateCardStatus();
+}
+
+let draftTimer = null;
+function sendDraft() {
+  clearTimeout(draftTimer);
+  if (!live || problem || !device) return;
+  draftTimer = setTimeout(async () => {
+    try {
+      await api('POST', '/api/draft?index=' + selected, lib);
+    } catch (e) {
+      say('Strip preview failed: ' + e.message, 'bad');
+    }
+  }, 120);
+}
+
+async function setLive(on) {
+  live = on;
+  $('live').checked = on;
+  if (on) {
+    liveSince = Date.now();
+    sendDraft();
+  } else if (device) {
+    clearTimeout(draftTimer);
+    try { await api('DELETE', '/api/draft'); } catch (e) { /* the strip carries on */ }
+  }
+}
+
+// ---- Library state ---------------------------------------------------------
+
+function say(text, kind) {
+  const m = $('message');
+  m.textContent = text;
+  m.className = kind || 'dim';
+}
+
+function libText() {
+  return JSON.stringify(lib);
+}
+
+// Call after every edit. structural = the form's shape changed, so rebuild it.
+function changed(structural) {
+  try {
+    set = Patch.parse(lib);
+    problem = '';
+  } catch (e) {
+    problem = e.message;
+  }
+  $('problem').textContent = problem ? "Can't use this yet: " + problem : '';
+  const text = libText();
+  const dirty = text !== savedText;
+  const size = new TextEncoder().encode(text).length;
+  $('size').textContent = (size / 1024).toFixed(1) + ' of 8 KB';
+  $('size').className = size > JSON_MAX ? 'bad' : 'dim';
+  $('save').disabled = !dirty || !!problem || !device || size > JSON_MAX;
+  $('discard').disabled = !dirty;
+  if (dirty) say(device ? 'Unsaved changes' : 'Unsaved changes (not connected, so they can only be downloaded)');
+  else say(device ? 'Saved on the device' : '');
+  if (structural) renderEditor();
+  renderCards();
+  if (!$('json-details').open || document.activeElement !== $('json')) $('json').value = JSON.stringify(lib, null, 2);
+  sendDraft();
+}
+
+function select(i) {
+  selected = Math.max(0, Math.min(i, lib.patches.length - 1));
+  resetPreview();
+  renderEditor();
+  renderCards();
+  sendDraft();
+}
+
+function uniqueName(base) {
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : base.slice(0, 13) + ' ' + n;
+    if (!lib.patches.some(p => p.name === name)) return name;
+  }
+}
+
+function plainPatches() {
+  return lib.patches.filter(p => !p.playlist).map(p => p.name);
+}
+
+// ---- Library cards ---------------------------------------------------------
+
+function renderCards() {
+  const cards = $('cards');
+  cards.replaceChildren(...lib.patches.map((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'card' + (i === selected ? ' selected' : '');
+    card.onclick = () => select(i);
+    const canvas = document.createElement('canvas');
+    canvas.dataset.index = i;
+    const top = document.createElement('div');
+    top.className = 'row';
+    const name = Object.assign(document.createElement('span'), { className: 'name', textContent: p.name });
+    const play = Object.assign(document.createElement('button'), { className: 'small', textContent: '▶', title: 'Play the saved version on the strip' });
+    play.onclick = e => { e.stopPropagation(); playSaved(p.name); };
+    play.dataset.name = p.name;
+    top.append(name, Object.assign(document.createElement('span'), { className: 'spacer' }), play);
+    const info = document.createElement('div');
+    info.className = 'row';
+    info.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: p.playlist ? 'playlist' : 'knob: ' + (p.knob || 'speed') }),
+                Object.assign(document.createElement('span'), { className: 'playing', textContent: '' }));
+    card.append(canvas, top, info);
+    return card;
+  }));
+  updateCardStatus();
+}
+
+function updateCardStatus() {
+  const savedNames = device ? device.modes : [];
+  document.querySelectorAll('.card').forEach((card, i) => {
+    const name = lib.patches[i] && lib.patches[i].name;
+    const playing = device && !device.draft && savedNames[device.mode] === name;
+    card.querySelector('.playing').textContent = playing ? '● on the strip' : '';
+    card.querySelector('button').disabled = !device || savedNames.indexOf(name) < 0;
+  });
+}
+
+async function playSaved(name) {
+  const mode = device ? device.modes.indexOf(name) : -1;
+  if (mode < 0) return;
+  if (live) await setLive(false);
+  try {
+    await api('POST', '/api/state', { mode });
+    setTimeout(refreshState, 150);
+  } catch (e) {
+    say(e.message, 'bad');
+  }
+}
+
+// ---- Form building ---------------------------------------------------------
+
+function el(tag, props, ...children) {
+  const e = Object.assign(document.createElement(tag), props || {});
+  e.append(...children);
+  return e;
+}
+
+function fieldset(title, ...children) {
+  return el('fieldset', {}, el('legend', { textContent: title }), ...children);
+}
+
+// A labelled row; hint goes underneath
+function field(label, control, hint) {
+  const id = 'f' + Math.random().toString(36).slice(2);
+  const target = control.matches && control.matches('input, select') ? control : control.querySelector('input, select');
+  if (target) target.id = id;
+  const row = el('div', { className: 'field' }, el('label', { htmlFor: id, textContent: label }), control);
+  if (hint) row.append(el('div', { className: 'hint', textContent: hint }));
+  return row;
+}
+
+// Values equal to the default are left out of the JSON, to keep it short
+function store(obj, key, value, fallback) {
+  if (value === fallback) delete obj[key];
+  else obj[key] = value;
+}
+
+function slider(obj, key, fallback, min, max, step) {
+  const value = key in obj ? obj[key] : fallback;
+  const range = el('input', { type: 'range', min, max, step, value });
+  const num = el('input', { type: 'number', step, value });
+  range.oninput = () => { num.value = range.value; store(obj, key, Number(range.value), fallback); changed(false); };
+  num.oninput = () => {
+    if (num.value === '' || isNaN(Number(num.value))) return;
+    range.value = num.value;
+    store(obj, key, Number(num.value), fallback);
+    changed(false);
+  };
+  return el('div', { className: 'row' }, range, num);
+}
+
+function dropdown(obj, key, fallback, options, structural) {
+  const s = el('select');
+  for (const [value, text] of options) s.append(el('option', { value, textContent: text }));
+  s.value = key in obj ? obj[key] : fallback;
+  s.onchange = () => { store(obj, key, s.value, fallback); changed(structural); };
+  return s;
+}
+
+function checkbox(text, checked, onchange) {
+  const box = el('input', { type: 'checkbox', checked });
+  box.onchange = () => onchange(box.checked);
+  return el('label', { className: 'check' }, box, text);
+}
+
+function oscEditor(title, o) {
+  const shape = dropdown(o, 'shape', 'sine',
+    [['sine', 'Sine: smooth'], ['triangle', 'Triangle'], ['saw', 'Saw: ramp up, drop'], ['square', 'Square: on/off'], ['noise', 'Noise: random drift']], false);
+
+  const ranged = Array.isArray(o.period);
+  const periodBox = el('div', { className: 'row' });
+  const periodInput = (index) => {
+    const value = ranged ? o.period[index] : (o.period === undefined ? 1 : o.period);
+    const input = el('input', { type: 'number', min: 0, step: 0.1, value });
+    input.oninput = () => {
+      const v = Number(input.value);
+      if (input.value === '' || isNaN(v)) return;
+      if (ranged) o.period[index] = v; else store(o, 'period', v, 1);
+      changed(false);
+    };
+    return input;
+  };
+  if (ranged) periodBox.append(periodInput(0), ' to ', periodInput(1), ' s');
+  else periodBox.append(periodInput(0), ' s');
+  const randomPeriod = checkbox('Each LED picks its own, in a range', ranged, on => {
+    const p = ranged ? o.period[0] : (o.period === undefined ? 1 : o.period);
+    o.period = on ? [p, Math.round(p * 300) / 100] : p;
+    changed(true);
+  });
+
+  return fieldset(title,
+    field('Shape', shape),
+    field('Period', periodBox, '0 holds still'),
+    el('div', { className: 'field' }, el('span'), randomPeriod),
+    field('Phase', slider(o, 'phase', 0, 0, 1, 0.01), 'Start point, in cycles'),
+    field('Spread', slider(o, 'spread', 0, -4, 4, 0.05), 'Cycles across the strip, so the wave travels; minus goes the other way'),
+    field('Scatter', slider(o, 'scatter', 0, 0, 1, 0.01), 'How much each LED starts at its own random point'));
+}
+
+function glowEditor(p) {
+  const box = fieldset('Glow: brightness of each LED',
+    checkbox('Brightness changes (otherwise always full)', !!p.glow, on => {
+      if (on) p.glow = { a: { shape: 'sine', period: 4 } }; else delete p.glow;
+      changed(true);
+    }));
+  if (!p.glow) return box;
+  const g = p.glow;
+  box.append(oscEditor('Oscillator A', g.a));
+  box.append(checkbox('Add oscillator B', !!g.b, on => {
+    if (on) g.b = { shape: 'sine', period: 7 }; else { delete g.b; delete g.mix; delete g.balance; }
+    changed(true);
+  }));
+  if (g.b) {
+    box.append(oscEditor('Oscillator B', g.b));
+    box.append(field('Mix', dropdown(g, 'mix', 'blend', [['blend', 'Blend A and B'], ['multiply', 'Multiply: A × B']], true)));
+    if ((g.mix || 'blend') === 'blend') box.append(field('Share of A', slider(g, 'balance', 0.5, 0, 1, 0.01)));
+  }
+  box.append(field('Power', slider(g, 'power', 1, 0.1, 6, 0.1), 'Above 1 lingers dim with brief swells; below 1 stays bright with brief dips'));
+  box.append(field('Floor', slider(g, 'floor', 0, 0, 1, 0.01), 'Dimmest it gets'));
+  box.append(field('Ceiling', slider(g, 'ceiling', 1, 0, 1, 0.01), 'Brightest it gets'));
+  return box;
+}
+
+function colourEditor(p) {
+  const c = p.colour;
+  const swatches = el('div', { className: 'swatches' });
+  c.palette.forEach((hex, i) => {
+    const input = el('input', { type: 'color', value: hex.toLowerCase() });
+    input.oninput = () => { c.palette[i] = input.value.toUpperCase(); changed(false); };
+    const remove = el('button', { textContent: '×', title: 'Remove', disabled: c.palette.length === 1 });
+    remove.onclick = () => { c.palette.splice(i, 1); changed(true); };
+    swatches.append(el('div', { className: 'swatch' }, input, remove));
+  });
+  const add = el('button', { textContent: '+', title: 'Add a colour', disabled: c.palette.length >= Patch.PATCH_PALETTE_MAX });
+  add.onclick = () => { c.palette.push(c.palette[c.palette.length - 1]); changed(true); };
+  swatches.append(add);
+
+  const box = fieldset('Colour',
+    field('Palette', el('div', {}, swatches, el('canvas', { id: 'palette-bar' }))),
+    field('Blend', dropdown(c, 'blend', 'smooth', [['smooth', 'Smooth'], ['steps', 'Hard steps']], true)));
+  if ((c.blend || 'smooth') === 'smooth') {
+    box.append(el('div', { className: 'field' }, el('span'),
+      checkbox('Wrap: last colour blends back to the first', !!c.wrap, on => { store(c, 'wrap', on, false); changed(false); })));
+  }
+  box.append(field('Picked by', dropdown(c, 'source', 'glow',
+    [['glow', 'Brightness: dim LEDs get the first colour'], ['osc', 'Its own oscillator']], true)));
+  if (c.source === 'osc') {
+    if (!c.osc) c.osc = { shape: 'saw', period: 10, spread: 1 };
+    box.append(oscEditor('Colour oscillator', c.osc));
+  }
+  return box;
+}
+
+function playlistEditor(p) {
+  const names = plainPatches();
+  const box = fieldset('Playlist: plays other patches in turn');
+  p.playlist.forEach((s, i) => {
+    const pick = el('select');
+    for (const n of names) pick.append(el('option', { value: n, textContent: n }));
+    if (names.indexOf(s.patch) < 0) pick.append(el('option', { value: s.patch, textContent: s.patch + ' (missing)' }));
+    pick.value = s.patch;
+    pick.onchange = () => { s.patch = pick.value; changed(false); };
+    const secs = el('input', { type: 'number', min: 0.1, step: 1, value: s.secs, title: 'Seconds' });
+    secs.oninput = () => { if (secs.value !== '') { s.secs = Number(secs.value); changed(false); } };
+    const ramp = Array.isArray(s.speed) ? s.speed : [s.speed === undefined ? 1 : s.speed, s.speed === undefined ? 1 : s.speed];
+    const speedInput = (index) => {
+      const input = el('input', { type: 'number', min: 0, max: 100, step: 0.1, value: ramp[index], title: index ? 'Speed at the end' : 'Speed at the start' });
+      input.oninput = () => {
+        if (input.value === '') return;
+        ramp[index] = Number(input.value);
+        if (ramp[0] === ramp[1]) store(s, 'speed', ramp[0], 1); else s.speed = ramp.slice();
+        changed(false);
+      };
+      return input;
+    };
+    const remove = el('button', { className: 'small', textContent: '×', title: 'Remove step', disabled: p.playlist.length === 1 });
+    remove.onclick = () => { p.playlist.splice(i, 1); changed(true); };
+    box.append(el('div', { className: 'step' }, pick, el('span', { className: 'row' }, secs, 's'),
+      el('span', { className: 'row dim' }, speedInput(0), '→'), el('span', { className: 'row dim' }, speedInput(1), 'x'), remove));
+  });
+  const add = el('button', { textContent: 'Add step', disabled: p.playlist.length >= Patch.PATCH_PLAYLIST_MAX || !names.length });
+  add.onclick = () => { p.playlist.push({ patch: names[0], secs: 30 }); changed(true); };
+  box.append(el('div', { className: 'hint dim', textContent: 'Each step: patch, seconds, speed at the start → speed at the end (1 = normal).' }), add);
+  return box;
+}
+
+function renderEditor() {
+  const p = lib.patches[selected];
+  $('editor-title').textContent = 'Edit ' + p.name;
+  const name = el('input', { type: 'text', value: p.name, maxLength: Patch.PATCH_NAME_MAX });
+  name.oninput = () => {
+    const old = p.name;
+    p.name = name.value;
+    // Playlists follow the rename
+    for (const q of lib.patches) for (const s of q.playlist || []) if (s.patch === old) s.patch = p.name;
+    $('editor-title').textContent = 'Edit ' + p.name;
+    changed(false);
+  };
+  const general = fieldset('Patch',
+    field('Name', name, 'Shown on the device screen'),
+    field('Knob', dropdown(p, 'knob', p.playlist ? 'brightness' : 'speed', [['speed', 'Speed'], ['brightness', 'Brightness']], false)));
+  const parts = [general];
+  if (p.playlist) parts.push(playlistEditor(p));
+  else parts.push(glowEditor(p), colourEditor(p));
+  $('fields').replaceChildren(...parts);
+  $('timeline-wrap').hidden = !p.playlist;
+  $('move-up').disabled = selected === 0;
+  $('move-down').disabled = selected === lib.patches.length - 1;
+  $('delete').disabled = lib.patches.length === 1;
+  $('duplicate').disabled = lib.patches.length >= Patch.PATCH_MAX;
+}
+
+// ---- Library actions -------------------------------------------------------
+
+function addPatch(patch) {
+  if (lib.patches.length >= Patch.PATCH_MAX) return say('The device holds up to ' + Patch.PATCH_MAX + ' patches', 'bad');
+  lib.patches.splice(selected + 1, 0, patch);
+  selected++;
+  resetPreview();
+  changed(true);
+}
+
+$('new-patch').onclick = () => addPatch({ name: uniqueName('New'), glow: { a: { shape: 'sine', period: 4, scatter: 1 } },
+                                          colour: { palette: ['#FF3A00', '#FFB040'] } });
+$('new-playlist').onclick = () => {
+  const names = plainPatches();
+  if (!names.length) return say('Make a patch first: playlists play other patches', 'bad');
+  addPatch({ name: uniqueName('Playlist'), knob: 'brightness', playlist: names.slice(0, 3).map(n => ({ patch: n, secs: 30 })) });
+};
+$('duplicate').onclick = () => {
+  const copy = JSON.parse(JSON.stringify(lib.patches[selected]));
+  copy.name = uniqueName(copy.name);
+  addPatch(copy);
+};
+$('delete').onclick = () => {
+  const p = lib.patches[selected];
+  const users = lib.patches.filter(q => (q.playlist || []).some(s => s.patch === p.name)).map(q => q.name);
+  const extra = users.length ? '\n\nIt will also be taken out of: ' + users.join(', ') : '';
+  if (!confirm('Delete ' + p.name + '?' + extra)) return;
+  for (const q of lib.patches) if (q.playlist) q.playlist = q.playlist.filter(s => s.patch !== p.name);
+  lib.patches.splice(selected, 1);
+  selected = Math.min(selected, lib.patches.length - 1);
+  resetPreview();
+  changed(true);
+};
+function move(by) {
+  const [p] = lib.patches.splice(selected, 1);
+  selected += by;
+  lib.patches.splice(selected, 0, p);
+  changed(true);
+}
+$('move-up').onclick = () => move(-1);
+$('move-down').onclick = () => move(1);
+
+$('download').onclick = () => {
+  const a = el('a', { download: 'led-patches.json',
+                      href: URL.createObjectURL(new Blob([JSON.stringify(lib, null, 2) + '\n'], { type: 'application/json' })) });
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('upload').onclick = () => $('upload-file').click();
+$('upload-file').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) replaceLibrary(await file.text(), 'Loaded ' + file.name + ': not saved yet');
+};
+$('reset').onclick = async () => {
+  if (!confirm('Replace the library with the built-in presets? Nothing changes on the device until you save.')) return;
+  try {
+    replaceLibrary(await api('GET', '/api/presets'), 'Presets loaded: not saved yet');
+  } catch (e) {
+    say("Couldn't fetch the presets: " + e.message, 'bad');
+  }
+};
+$('json-apply').onclick = () => replaceLibrary($('json').value, 'JSON applied: not saved yet');
+
+function replaceLibrary(text, message) {
+  let obj;
+  try {
+    obj = JSON.parse(text);
+    Patch.parse(obj);
+  } catch (e) {
+    return say("Can't use that: " + (e instanceof SyntaxError ? 'not valid JSON' : e.message), 'bad');
+  }
+  lib = obj;
+  selected = 0;
+  resetPreview();
+  changed(true);
+  say(message);
+}
+
+$('discard').onclick = () => {
+  if (!confirm('Throw away your changes and go back to what the device has?')) return;
+  lib = JSON.parse(savedText);
+  selected = Math.min(selected, lib.patches.length - 1);
+  resetPreview();
+  changed(true);
+};
+
+$('save').onclick = async () => {
+  $('save').disabled = true;
+  say('Saving…');
+  try {
+    const text = libText();
+    await api('POST', '/api/patches', lib);
+    savedText = text;
+    await refreshState();
+    // Saving ends the draft; carry on showing this patch, now saved
+    if (live) await api('POST', '/api/state', { mode: selected });
+    changed(false);
+    say('Saved on the device', 'good');
+  } catch (e) {
+    changed(false);
+    say('Not saved: ' + e.message, 'bad');
+  }
+};
+
+$('live').onchange = e => setLive(e.target.checked);
+
+let brightnessTimer = null;
+$('brightness').oninput = e => {
+  $('brightness-value').textContent = e.target.value + '%';
+  clearTimeout(brightnessTimer);
+  brightnessTimer = setTimeout(() => api('POST', '/api/state', { brightness: Number(e.target.value) }).catch(() => {}), 100);
+};
+
+$('speed').oninput = e => {
+  speedSteps = Number(e.target.value);
+  $('speed-value').textContent = speedMultiplier().toFixed(2) + 'x';
+};
+function speedMultiplier() {
+  return Math.pow(2, speedSteps / 5);   // same as the knob: every 5 clicks doubles
+}
+
+$('led-count').oninput = e => {
+  const n = Math.round(Number(e.target.value));
+  if (n >= 1 && n <= 300) { ledCount = n; resetPreview(); }
+};
+
+window.addEventListener('beforeunload', e => { if (lib && libText() !== savedText) e.preventDefault(); });
+
+// ---- Preview ---------------------------------------------------------------
+
+let previewMs = 0, lastFrame = performance.now(), nextSample = 0;
+let historyFill = 0;
+const scopeData = [];   // [first, middle, last] brightness per history sample
+
+function resetPreview() {
+  previewMs = 0;
+  nextSample = 0;
+  scopeData.length = 0;
+  const h = $('history');
+  h.getContext('2d').clearRect(0, 0, h.width, h.height);
+}
+
+function css([r, g, b]) {
+  // Levels are perceptual, close enough to how a screen shows colour
+  return `rgb(${r / 257 | 0},${g / 257 | 0},${b / 257 | 0})`;
+}
+
+function fitCanvas(canvas) {
+  const scale = window.devicePixelRatio || 1;
+  const w = Math.round(canvas.clientWidth * scale), h = Math.round(canvas.clientHeight * scale);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; return true; }
+  return false;
+}
+
+function drawStrip(canvas, frame, glow) {
+  fitCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, n = frame.length;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  const cell = w / n;
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = css(frame[i]);
+    if (glow && cell > 10) {
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = cell * 0.8;
+      ctx.beginPath();
+      ctx.arc((i + 0.5) * cell, h / 2, Math.min(cell * 0.32, h * 0.32), 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(i * cell + (cell > 4 ? 1 : 0), 0, Math.max(1, cell - (cell > 4 ? 2 : 0)), h);
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+
+function addHistoryRow(frame) {
+  const canvas = $('history');
+  if (fitCanvas(canvas)) scopeData.length = 0;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, rowH = canvas.height / HISTORY_ROWS, n = frame.length;
+  ctx.drawImage(canvas, 0, rowH);
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = css(frame[i]);
+    ctx.fillRect(Math.floor(i * w / n), 0, Math.ceil(w / n), Math.ceil(rowH));
+  }
+  const level = c => Math.max(c[0], c[1], c[2]) / 65535;
+  scopeData.unshift([level(frame[0]), level(frame[n >> 1]), level(frame[n - 1])]);
+  if (scopeData.length > HISTORY_ROWS) scopeData.pop();
+}
+
+function drawScope() {
+  const canvas = $('scope');
+  fitCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  for (const f of [0.25, 0.5, 0.75]) { ctx.beginPath(); ctx.moveTo(0, h * f); ctx.lineTo(w, h * f); ctx.stroke(); }
+  const colours = ['#fbbf24', '#60a5fa', '#f472b6'];
+  ctx.lineWidth = 1.5 * (window.devicePixelRatio || 1);
+  for (let k = 2; k >= 0; k--) {
+    ctx.strokeStyle = colours[k];
+    ctx.beginPath();
+    scopeData.forEach((d, i) => {
+      const x = w - (i / (HISTORY_ROWS - 1)) * w, y = h - 3 - d[k] * (h - 6);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
+function drawTimeline(p, ms) {
+  const canvas = $('timeline');
+  fitCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const total = p.playlist.reduce((t, s) => t + s.ms, 0);
+  const shades = ['#3f3f46', '#52525b'];
+  ctx.font = `${11 * (window.devicePixelRatio || 1)}px system-ui`;
+  ctx.textBaseline = 'middle';
+  let x = 0;
+  p.playlist.forEach((s, i) => {
+    const sw = s.ms / total * w;
+    ctx.fillStyle = shades[i % 2];
+    ctx.fillRect(x, 0, sw, h);
+    ctx.fillStyle = '#e4e4e7';
+    ctx.fillText(set.patches[s.patch].name, x + 6, h / 2, sw - 10);
+    x += sw;
+  });
+  const at = (ms % total) / total * w;
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillRect(at - 1, 0, 3, h);
+  const step = Patch.playlist_step(set, selected, ms);
+  $('timeline-now').textContent = set.patches[p.playlist[step].patch].name;
+}
+
+function drawPaletteBar(p) {
+  const canvas = $('palette-bar');
+  if (!canvas || !p || p.playlist_count) return;
+  fitCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  for (let x = 0; x < canvas.width; x++) {
+    ctx.fillStyle = css(Patch.palette_colour(p, x / (canvas.width - 1)));
+    ctx.fillRect(x, 0, 1, canvas.height);
+  }
+}
+
+const frame = [];
+function tick(now) {
+  const dt = Math.min(now - lastFrame, 100);
+  lastFrame = now;
+  if (set && selected < set.count) {
+    const sameShape = set.patches.length === lib.patches.length;
+    previewMs += dt * speedMultiplier();
+    const ms = Math.floor(previewMs);
+    Patch.render(set, selected, ms, frame, ledCount);
+    frame.length = ledCount;
+    drawStrip($('strip'), frame, true);
+    while (nextSample <= previewMs) {
+      const sample = [];
+      Patch.render(set, selected, Math.floor(nextSample), sample, ledCount);
+      addHistoryRow(sample);
+      nextSample += HISTORY_SAMPLE_MS * speedMultiplier();
+    }
+    drawScope();
+    const p = set.patches[selected];
+    if (p.playlist_count) drawTimeline(p, ms);
+    drawPaletteBar(p);
+
+    // Library cards play at normal speed, all at the same time
+    if (sameShape) {
+      document.querySelectorAll('.card canvas').forEach(c => {
+        const i = Number(c.dataset.index);
+        const cardFrame = [];
+        Patch.render(set, i, Math.floor(now), cardFrame, ledCount);
+        drawStrip(c, cardFrame, false);
+      });
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// ---- Start -----------------------------------------------------------------
+
+async function start() {
+  await refreshState();
+  let text;
+  try {
+    text = await api('GET', '/api/patches');
+  } catch (e) {
+    try {
+      text = await api('GET', '/api/presets');
+    } catch (e2) {
+      $('fields').textContent = "Couldn't load the patches. Open this page from the controller's address.";
+      return;
+    }
+  }
+  lib = JSON.parse(text);
+  savedText = libText();
+  if (device) ledCount = device.leds;
+  $('led-count').value = ledCount;
+  $('led-count-hint').textContent = device ? 'The strip has ' + device.leds : '';
+  $('history-span').textContent = (HISTORY_ROWS * HISTORY_SAMPLE_MS / 1000) + ' seconds at 1x';
+  if (device) selected = Math.min(device.mode, lib.patches.length - 1);
+  // A draft left playing by an earlier visit has nothing to edit it now
+  if (device && device.draft) {
+    await api('DELETE', '/api/draft').catch(() => {});
+    device.draft = false;
+    showDevice();
+  }
+  changed(true);
+  requestAnimationFrame(tick);
+  setInterval(refreshState, 2000);
+}
+start();
+</script>
+</body>
+</html>
