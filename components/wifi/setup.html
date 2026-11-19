@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Controller WiFi</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f4f4f5; --card: #fff; --text: #18181b; --dim: #71717a; --line: #d4d4d8; --accent: #2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #18181b; --card: #27272a; --text: #f4f4f5; --dim: #a1a1aa; --line: #3f3f46; --accent: #3b82f6; } }
+  body { font: 16px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0 auto; max-width: 440px; padding: 16px; }
+  h1 { font-size: 1.3em; margin: 0 0 12px; }
+  h2 { font-size: 1em; color: var(--dim); margin: 20px 0 6px; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  button, input { font: inherit; color: inherit; width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); margin: 4px 0; }
+  .net { display: flex; justify-content: space-between; text-align: left; cursor: pointer; }
+  .net .bars { color: var(--dim); }
+  .primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .dim { color: var(--dim); }
+  label { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: var(--dim); }
+  label input { width: auto; margin: 0; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<h1>LED Controller WiFi</h1>
+<div id="status" class="card dim">Checking…</div>
+
+<h2>Networks</h2>
+<div id="networks" class="dim">Scanning…</div>
+<button id="rescan" type="button">Scan again</button>
+
+<h2 id="join-heading">Join a network</h2>
+<form id="join">
+  <input id="ssid" placeholder="Network name" maxlength="32" required autocapitalize="none" autocorrect="off" spellcheck="false">
+  <input id="password" type="password" placeholder="Password (blank if open)" maxlength="63" autocapitalize="none" autocorrect="off">
+  <label><input id="show" type="checkbox"> Show password</label>
+  <button id="join-button" class="primary">Join</button>
+</form>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function line(text, href) {
+  const div = document.createElement('div');
+  if (href) {
+    const a = document.createElement('a');
+    a.href = a.textContent = href;
+    div.append(text, a);
+  } else {
+    div.textContent = text;
+  }
+  return div;
+}
+
+function showStatus(s) {
+  const connected = s.state === 'connected';
+  $('join-heading').textContent = connected ? 'Change network' : 'Join a network';
+  $('join-button').textContent = connected ? 'Change network' : 'Join';
+  const lines = [];
+  if (s.state === 'connected') {
+    lines.push(line('Connected to ' + s.ssid));
+    lines.push(line('Address: ', 'http://' + s.ip + '/'));
+    if (s.hotspot) lines.push(line('The setup hotspot closes in a minute. Switch your phone back to your normal WiFi and use the address above.'));
+  } else if (s.state === 'connecting') {
+    lines.push(line('Connecting to ' + s.ssid + '…'));
+  } else {
+    lines.push(line(s.ssid ? "Couldn't join " + s.ssid : 'Not set up yet: choose a network below'));
+  }
+  if (s.error && s.state !== 'connected') lines.push(line('Last attempt: ' + s.error));
+  $('status').replaceChildren(...lines);
+}
+
+async function refreshStatus() {
+  try { showStatus(await (await fetch('/wifi/status')).json()); } catch (e) { /* phone between networks */ }
+}
+
+function bars(rssi) {
+  return rssi > -60 ? '▂▄▆█' : rssi > -70 ? '▂▄▆' : rssi > -80 ? '▂▄' : '▂';
+}
+
+function networkButton(n) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'net';
+  const name = document.createElement('span');
+  name.textContent = (n.secure ? '🔒 ' : '') + n.ssid;
+  const strength = document.createElement('span');
+  strength.className = 'bars';
+  strength.textContent = bars(n.rssi);
+  b.append(name, strength);
+  b.onclick = () => { $('ssid').value = n.ssid; $('password').value = ''; $('password').focus(); };
+  return b;
+}
+
+async function scan() {
+  $('networks').textContent = 'Scanning…';
+  try {
+    const found = await (await fetch('/wifi/scan')).json();
+    const strongest = {};
+    for (const n of found)
+      if (n.ssid && !(strongest[n.ssid] && strongest[n.ssid].rssi >= n.rssi)) strongest[n.ssid] = n;
+    const list = Object.values(strongest).sort((a, b) => b.rssi - a.rssi);
+    if (list.length) $('networks').replaceChildren(...list.map(networkButton));
+    else $('networks').textContent = 'No networks found. The board only sees 2.4GHz WiFi.';
+  } catch (e) {
+    $('networks').textContent = 'Scan failed, try again';
+  }
+}
+
+$('show').onchange = e => { $('password').type = e.target.checked ? 'text' : 'password'; };
+$('rescan').onclick = scan;
+$('join').onsubmit = async e => {
+  e.preventDefault();
+  const body = new URLSearchParams({ ssid: $('ssid').value, password: $('password').value });
+  try {
+    const r = await fetch('/wifi/save', { method: 'POST', body });
+    if (!r.ok) alert(await r.text());
+  } catch (e) { /* board switched networks mid-reply */ }
+  refreshStatus();
+};
+
+refreshStatus();
+setInterval(refreshStatus, 2000);
+scan();
+</script>
+</body>
+</html>

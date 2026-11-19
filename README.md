@@ -21,10 +21,10 @@ led-controller/
 ├── components/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
-│   └── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
+│   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
+│   └── wifi/            ← joins WiFi, setup hotspot, captive DNS, setup page (setup.html)
 ├── HARDWARE.md          ← pinouts, strip wiring, power, parts and design decisions
 ├── pinout.html / .pdf   ← printable bench wiring card for the diymore LCD board
-├── pinout.html / .pdf   ← printable top-down board and chip pinout
 └── README.md            ← this file
 ```
 
@@ -48,7 +48,7 @@ See HARDWARE.md for full details.
 - `PORT` is auto-detected from the first `/dev/cu.usbserial-*`, `cu.SLAB_USBtoUART` or `cu.wchusbserial*`; override with `PORT=/dev/cu.xxx ./flash.sh ...`
 - macOS/Linux only — no Windows scripts
 - Language: **C only, not Arduino**
-- No managed components — everything is in `components/`
+- Few external libraries: we write small pieces ourselves in `components/`; a light library is fine where it clearly helps. ESP-IDF's own components (WiFi, web server, NVS) are used freely. No managed components so far
 
 ## Current state
 
@@ -70,7 +70,18 @@ Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). 
 - **Speed** is per mode, so each moving mode remembers its own. Knob steps are logarithmic: every 5 clicks doubles or halves it, from 1/8x to 8x, so each click feels the same size at any speed. Changing speed changes the rate of motion without the effect jumping, because effect time is accumulated as real time × speed
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
 - LCD shows the mode, whichever setting the knob controls (with a bar), and a live preview of the strip
-- Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`
+- Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`, `HOSTNAME`
+
+### WiFi
+
+- **First boot, or after moving house:** with no saved network, the board opens an open hotspot called `LED-Setup-XXXX` (last digits of its MAC). Join it from a phone and the setup page pops up as a captive portal, like hotel WiFi (Android shows a "Sign in to Wi-Fi network" notification); if it doesn't, browse to `http://4.3.2.1/wifi`. On Android, turn mobile data off first: with it on, the phone sends traffic for a no-internet network over mobile data and never reaches the board
+- The page scans for networks (2.4GHz only: the ESP32 has no 5GHz radio), you tap one, enter the password and press Join. The page shows progress and, once joined, the board's new address, and the Join button becomes Change network. The hotspot stays up for a minute so the phone can read it, then closes
+- The network is saved in flash by the WiFi driver, so later boots join straight away. The board's address is logged on serial, and it asks the router for the hostname `led-controller`
+- **Can't join the saved network** (5 attempts, about 15s): the hotspot comes back, with the reason (not found, wrong password) on the page. If no phone uses it for 5 minutes, it closes and the saved network is tried again, so a router outage or power cut sorts itself out
+- **Dropped after joining:** retried every 3s indefinitely, without the hotspot
+- **Changing network** from home: the setup page is also at `http://<board address>/wifi` (the root redirects there until there's a control page)
+- Security: the hotspot is open, and anyone on the home network can reach the setup page. Fine for a lamp; revisit before it controls anything that matters
+- Tested on the DevKit with an Android phone (2026-11-19): popup, scan, join, hotspot closing after a minute, and rejoining on reboot all work. Not yet tried from an iPhone
 
 ## Key architectural decisions
 
@@ -86,14 +97,29 @@ Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). 
 - A fixed 300µs latch gap after every frame, so a late frame can never run into the next
 - **Low-end floor:** the strip's lowest non-zero level (1/255) is still a visible glow, so a fade to black always ends with a visible switch-off; with gamma 2.2, roughly the bottom 8% of perceptual brightness rounds to off. Options noted for later: pulse modes ease to the minimum glow instead of off, or fade faster through the bottom of the range
 
+### WiFi
+- `components/wifi` uses only ESP-IDF: `esp_wifi`, `esp_netif`, and the built-in `esp_http_server`. The captive DNS server (~120 lines, `captive_dns.c`) is our own. It answers A queries with the hotspot's address, other types (AAAA) with an empty reply so phones don't hang, and impossible names (`*google.com`, `.onion`) and reverse lookups with "no such name": some Android phones look those up to detect spoofed DNS
+- Phones detect the portal by probing a known URL (`captive.apple.com/hotspot-detect.html`, `connectivitycheck.gstatic.com/generate_204`); while the hotspot is up, any unknown URL gets a 302 to the setup page
+- **The hotspot is at 4.3.2.1, not the softAP default 192.168.4.1.** Android 11+ treats a probe that resolves to a private address as "no internet" and silently skips the sign-in prompt; it fetched the page in the background but showed nothing. A public-looking address fixes it (WLED uses 4.3.2.1 for the same reason); the hotspot has no internet, so the address's real owner is never reached
+- No DHCP option 114 (RFC 8910 captive portal URI): Android expects it to point at a JSON API, not a page, and it was a suspect while debugging
+- WiFi power saving is off (`WIFI_PS_NONE`): with it on, replies took 80–170ms and the odd request failed; on mains power the saving isn't worth it
+- The hotspot runs as AP+STA so the page can scan while it's up. All state changes take one mutex, since the event loop, timers and web server each run on their own task
+- The setup page is a single static `setup.html` embedded in the firmware (`EMBED_FILES`). It talks to `/wifi/status`, `/wifi/scan` and `/wifi/save` (form-encoded POST), so the C side never builds HTML
+- `wifi_web_server()` hands out the server so the control page can register on it later
+
+### Cores
+- WiFi runs on core 0. The LED loop is a task pinned to core 1 at priority 10, created from `app_main`, and the strip, encoder and LCD are initialised inside it so their interrupts are on core 1 too. On a shared core, WiFi interrupts can delay the RMT's mid-frame buffer refills and corrupt the data
+- `CONFIG_RMT_TX_ISR_CACHE_SAFE` keeps the RMT interrupt running while flash is written (saving WiFi settings), so a frame can't glitch then
+- `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE`: the app is ~840KB with WiFi, past the default 1MB partition's comfort zone; the large table gives 1.5MB
+
 ### Main loop
-- Single loop at 200fps (`vTaskDelayUntil`, 5ms): read encoder → render effect → apply brightness → push to strip; LCD preview every 4th frame
+- Single loop at 200fps in the LED task (`vTaskDelayUntil`, 5ms): read encoder → render effect → apply brightness → push to strip; LCD preview every 4th frame
 - Effects are pure functions of effect time (ms), so motion speed doesn't depend on frame rate, and speed control lives entirely in the main loop
 - Effects render 16-bit perceptual RGB into `frame[]`; the LCD preview reads the same buffer before brightness is applied
 
 ## What to work on next
 
-1. **WiFi connectivity** (next job): join the home network, then a web page and/or MQTT for Home Assistant
+1. **WiFi:** test the setup flow on hardware, then a control web page (mode, brightness, speed) on `wifi_web_server()`, then possibly MQTT for Home Assistant (ESP-IDF has a built-in MQTT client). A `led-controller.local` name would need mDNS, which is a managed component in ESP-IDF 5.x
 2. When the replacement screen arrives: move to the diymore LCD board (`BOARD=lcd`) and do more on light control — on-screen UI, more effects (solid colour, chase, fire, twinkle), and the low-end floor options above
 3. Persist settings (mode, brightness, per-mode speed) to NVS, saved 2s after the knob stops (bt-mixer pattern)
 4. Set `LED_COUNT` for the full offcut once it's in use; it's 10 for the bench test piece

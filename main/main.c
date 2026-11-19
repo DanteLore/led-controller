@@ -5,11 +5,13 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
 #include "st7789.h"
 #include "encoder.h"
 #include "led_strip.h"
 #include "effects.h"
+#include "wifi.h"
 
 // Strip — count chips, not LEDs (24V strips usually have 6 LEDs per chip)
 #define LED_PIN     13
@@ -26,6 +28,14 @@
 #define PREVIEW_EVERY   4   // LCD preview at 50fps; it takes ~3ms to draw
 
 #define STARTUP_MODE  MODE_DEMO
+
+#define HOSTNAME  "led-controller"
+
+// WiFi runs on core 0, so the LEDs get core 1 to themselves: WiFi interrupts
+// would otherwise delay the RMT refills mid-frame and corrupt the data
+#define LED_CORE        1
+#define LED_PRIORITY   10
+#define LED_STACK    6144
 
 // Perceptual, so 50% looks half as bright (roughly 22% PWM after gamma)
 #define BRIGHTNESS_DEFAULT 50
@@ -183,7 +193,7 @@ static void adjust_knob(settings_t *s, int delta)
     }
 }
 
-void app_main(void)
+static void led_task(void *arg)
 {
     display_init();
     encoder_init(ENC_PIN_CLK, ENC_PIN_DT, ENC_PIN_SW);
@@ -252,4 +262,23 @@ void app_main(void)
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(FRAME_MS));
     }
+}
+
+static void nvs_init(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+void app_main(void)
+{
+    nvs_init();
+    wifi_start(HOSTNAME);
+    // Interrupts are set up on the core that registers them, so the strip,
+    // encoder and LCD are all initialised inside the task
+    xTaskCreatePinnedToCore(led_task, "leds", LED_STACK, NULL, LED_PRIORITY, NULL, LED_CORE);
 }
