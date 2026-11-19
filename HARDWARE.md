@@ -2,7 +2,7 @@
 
 > **Reference document.** The board, LCD and encoder sections come from bt-mixer, where they were confirmed working.
 
-> **Bench pinout:** [pinout.pdf](pinout.pdf) (A4 landscape, generated from [pinout.html](pinout.html)) shows the board top-down with USB on the left, pins numbered T1–T15 / B1–B15 from the USB end, plus the 74AHCT125 pin map. Header layout confirmed against the real board on 2026-11-18 (it labels GPIO36/39 as VP/VN). To regenerate: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=pinout.pdf "file://$PWD/pinout.html"`
+> **Bench pinout:** [pinout.pdf](pinout.pdf) (A4 landscape, generated from [pinout.html](pinout.html)) shows the diymore LCD board top-down with USB on the left, pins numbered T1–T15 / B1–B15 from the USB end, plus an underside view matching the silkscreen. Seen from above, VIN/GND/GPIO13… run along the far (top) edge and 3.3V/GND/GPIO15… along the near edge: the same as the DevKit, even though this board's labels are on the underside. Confirmed on the board 2026-11-19, after a drawing with the rows mirrored put the encoder button on the LCD reset pin. To regenerate: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=pinout.pdf "file://$PWD/pinout.html"`
 
 ---
 

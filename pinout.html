@@ -119,6 +119,12 @@ td input { width: 18px; height: 18px; accent-color: var(--wire); }
 .dot1 { position: absolute; top: 14px; left: 10px; width: 8px; height: 8px; border-radius: 50%; background: #6c7378; }
 .leg { align-self: center; height: 8px; background: #a8b0b6; border-radius: 1px; }
 
+.pcb.under { background: #17304f; }
+.under-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #9fb2c4; font: 600 0.7rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.board.small { grid-template-rows: auto 24px 80px 24px auto; }
+.lbl.silk b { color: var(--fg); }
+
 @page { size: A4 landscape; margin: 12mm; }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -133,12 +139,12 @@ td input { width: 18px; height: 18px; accent-color: var(--wire); }
 
 <div class="wrap">
   <header>
-    <h1>LED controller pinout</h1>
-    <p class="sub">diymore ESP32 + 1.9" LCD, seen from above with the screen facing you, USB-C on the left and the antenna on the right. Pins are numbered T1–T15 along the top and B1–B15 along the bottom, counting from the USB end.</p>
+    <h1>LED controller pinout: diymore LCD board</h1>
+    <p class="sub">Seen from above with the screen facing you and USB-C on the left. The pin names are printed on the <em>underside</em>; the rows here are confirmed on the real board (2026-11-19). Pins are numbered T1–T15 along the top edge and B1–B15 along the bottom edge, counting from the USB end.</p>
   </header>
 
   <div class="check">
-    <strong>Check the orientation before wiring.</strong> Plug in USB only, then meter the two pins nearest the USB socket against GND. Top-left (T1, VIN) should read about 4.7–5V and bottom-left (B1) should read 3.3V. If they're the other way round, the board is upside down compared with this drawing.
+    <strong>Check the orientation before wiring.</strong> Turn the board over like a page, keeping USB on the left, and compare the labels with the underside view further down: VIN should be at the near edge and 3.3V at the far edge. Metered on the board 2026-11-19: <b>T1 = VIN</b> (top left), <b>B1 = 3.3V</b> (bottom left).
   </div>
 
   <div class="legend">
@@ -152,76 +158,78 @@ td input { width: 18px; height: 18px; accent-color: var(--wire); }
   <div class="scroll"><div class="board" id="board">
     <div class="pcb">
       <div class="usb"></div>
-      <span class="btn t"></span><span class="btn b"></span>
-      <span class="btn-lbl t">EN</span><span class="btn-lbl b">BOOT</span>
-      <div class="screen">LCD</div>
-      <div class="ant"></div>
+      <span class="edge-lbl usbl">USB-C</span>
+      <div class="screen">LCD · TOP SIDE</div>
     </div>
   </div></div>
 
   <section class="pagebreak">
     <h2>Connections to make</h2>
     <div class="tbl"><table>
-      <thead><tr><th></th><th>Board pin</th><th>Goes to</th></tr></thead>
+      <thead><tr><th></th><th>Board pin</th><th>Underside label</th><th>Goes to</th></tr></thead>
       <tbody>
-        <tr><td><input type="checkbox" id="c1" aria-label="done"></td><td><code>T3 GPIO13</code></td><td>74AHCT125 pin 2 (1A)</td></tr>
-        <tr><td><input type="checkbox" id="c2" aria-label="done"></td><td><code>T9 GPIO33</code></td><td>Encoder CLK</td></tr>
-        <tr><td><input type="checkbox" id="c3" aria-label="done"></td><td><code>T6 GPIO27</code></td><td>Encoder DT</td></tr>
-        <tr><td><input type="checkbox" id="c4" aria-label="done"></td><td><code>T5 GPIO14</code></td><td>Encoder SW</td></tr>
-        <tr><td><input type="checkbox" id="c5" aria-label="done"></td><td><code>B1 3.3V</code></td><td>Encoder VCC (+)</td></tr>
-        <tr><td><input type="checkbox" id="c6" aria-label="done"></td><td><code>T2 GND</code></td><td>Encoder GND, 74AHCT125 pin 7, buck OUT−, strip GND</td></tr>
-        <tr><td><input type="checkbox" id="c7" aria-label="done"></td><td><code>T1 VIN</code></td><td>74AHCT125 pin 14. Buck OUT+ (5.0V) only when running without USB</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T3 GPIO13</code></td><td>CH4 / ADC14</td><td>330Ω → strip DIN</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T9 GPIO33</code></td><td>CH8 / ADC5</td><td>Encoder CLK</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T6 GPIO27</code></td><td>CH7 / ADC17</td><td>Encoder DT</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T5 GPIO14</code></td><td>CH6 / ADC16</td><td>Encoder SW</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B1 3.3V</code></td><td>3.3V</td><td>Encoder + (VCC). Not VIN: 5V on the encoder would put 5V on the GPIOs</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T2 GND</code></td><td>GND</td><td>Encoder GND, strip GND (B2 is GND too)</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T1 VIN</code></td><td>VIN</td><td>Nothing on USB power. Buck OUT+ (5.0V) only when running without USB</td></tr>
       </tbody>
     </table></div>
   </section>
 
   <section>
-    <h2>SN74AHCT125N, from above</h2>
-    <p class="sub" style="margin:0 0 12px">Notch at the top. Pin 1 is top-left beside the dot; numbering runs down the left and back up the right.</p>
-    <div class="chipwrap"><div class="chip" id="chip">
-      <div class="body"><span class="notch"></span><span class="dot1"></span>74AHCT125</div>
+    <h2>Underside, as you read the labels</h2>
+    <p class="sub" style="margin:0 0 12px">The board turned over like a page, USB still on the left. Label text is from the product listing and may differ slightly; VIN, 3.3V and EN are the ones to check.</p>
+    <div class="scroll"><div class="board small" id="under">
+      <div class="pcb under">
+        <div class="usb"></div>
+        <div class="under-note">Underside · labels</div>
+      </div>
     </div></div>
-    <p class="sub">0.1µF capacitor across pins 14 and 7, as close to the chip as you can get it. 330Ω from pin 3 to strip DIN.</p>
   </section>
 </div>
 
 <script>
-// Left to right, USB end first.
-const topRow = [
-  ["VIN 5V", "Chip 14 / buck OUT+", "pwr"],
-  ["GND", "Common ground", "gnd"],
-  ["GPIO13", "LED data → chip 2", "wire"],
-  ["GPIO12", "Avoid (boot pin)", "off"],
-  ["GPIO14", "Encoder SW", "wire"],
-  ["GPIO27", "Encoder DT", "wire"],
-  ["GPIO26", "Free", "off"],
-  ["GPIO25", "Free", "off"],
-  ["GPIO33", "Encoder CLK", "wire"],
-  ["GPIO32", "LCD backlight", "lcd"],
-  ["GPIO35", "Input only", "off"],
-  ["GPIO34", "Input only", "off"],
-  ["VN", "GPIO39, input only", "off"],
-  ["VP", "GPIO36, input only", "off"],
-  ["EN", "Reset", "off"],
-];
+// Top view, left to right from the USB end: [name, role, kind, underside label]
 const bottomRow = [
-  ["3.3V", "Encoder VCC", "pwr"],
-  ["GND", "Ground", "gnd"],
-  ["GPIO15", "LCD CS", "lcd"],
-  ["GPIO2", "LCD DC", "lcd"],
-  ["GPIO4", "LCD RST", "lcd"],
-  ["GPIO16", "Free", "off"],
-  ["GPIO17", "Free", "off"],
-  ["GPIO5", "Free (boot pin)", "off"],
-  ["GPIO18", "LCD SCLK", "lcd"],
-  ["GPIO19", "Free", "off"],
-  ["GPIO21", "Free", "off"],
-  ["GPIO3", "RX0, USB serial", "off"],
-  ["GPIO1", "TX0, USB serial", "off"],
-  ["GPIO22", "Free", "off"],
-  ["GPIO23", "LCD MOSI", "lcd"],
+  ["3.3V", "Encoder +", "pwr", "3.3V"],
+  ["GND", "Ground", "gnd", "GND"],
+  ["GPIO15", "LCD CS", "lcd", "CH3 / 15"],
+  ["GPIO2", "LCD DC", "lcd", "CH2 / 2"],
+  ["GPIO4", "LCD RST", "lcd", "CH0 / 4"],
+  ["GPIO16", "Free", "off", "RX2 / 16"],
+  ["GPIO17", "Free", "off", "TX2 / 17"],
+  ["GPIO5", "Free (boot pin)", "off", "SS / 5"],
+  ["GPIO18", "LCD SCLK", "lcd", "SCK / 18"],
+  ["GPIO19", "Free", "off", "MISO / 19"],
+  ["GPIO21", "Free", "off", "SDA / 21"],
+  ["GPIO3", "RX0, USB serial", "off", "RX / 3"],
+  ["GPIO1", "TX0, USB serial", "off", "TX / 1"],
+  ["GPIO22", "Free", "off", "SCL / 22"],
+  ["GPIO23", "LCD MOSI", "lcd", "MOSI / 23"],
 ];
-const board = document.getElementById("board");
+const topRow = [
+  ["VIN 5V", "Buck OUT+ only", "pwr", "VIN"],
+  ["GND", "Encoder + strip GND", "gnd", "GND"],
+  ["GPIO13", "330Ω → strip DIN", "wire", "CH4 · ADC14"],
+  ["GPIO12", "Avoid (boot pin)", "off", "CH5 · ADC15"],
+  ["GPIO14", "Encoder SW", "wire", "CH6 · ADC16"],
+  ["GPIO27", "Encoder DT", "wire", "CH7 · ADC17"],
+  ["GPIO26", "Free", "off", "DAC2 · ADC19"],
+  ["GPIO25", "Free", "off", "DAC1 · ADC18"],
+  ["GPIO33", "Encoder CLK", "wire", "CH8 · ADC5"],
+  ["GPIO32", "LCD backlight", "lcd", "CH9 · ADC4"],
+  ["GPIO35", "Input only", "off", "ADC7"],
+  ["GPIO34", "Input only", "off", "ADC6"],
+  ["GPIO39", "Input only", "off", "ADC3"],
+  ["GPIO36", "Input only", "off", "ADC0"],
+  ["EN", "Reset", "off", "EN"],
+];
+const wired = (name, kind) => kind === "wire" || kind === "gnd" || name === "3.3V";
+const marked = (name, kind) => wired(name, kind) || name === "VIN 5V";
+
 function add(parent, cls, row, col, html) {
   const el = document.createElement("div");
   el.className = cls;
@@ -230,32 +238,21 @@ function add(parent, cls, row, col, html) {
   if (html) el.innerHTML = html;
   parent.appendChild(el);
 }
-topRow.forEach(([name, role, kind], i) => {
-  const hot = kind === "wire" || kind === "pwr" || kind === "gnd";
-  add(board, `lbl T ${kind}`, 1, i + 1, `<b>${name}</b><small>${role}</small><span class="n">T${i + 1}</span>`);
-  add(board, `pin${hot ? " hot " + kind : ""}`, 2, i + 1);
-});
-bottomRow.forEach(([name, role, kind], i) => {
-  const hot = kind === "wire" || (kind === "pwr" && name === "3.3V");
-  add(board, `pin${hot ? " hot " + kind : ""}`, 4, i + 1);
-  add(board, `lbl B ${kind}`, 5, i + 1, `<b>${name}</b><small>${role}</small><span class="n">B${i + 1}</span>`);
-});
+function row(el, pins, prefix, labelRow, pinRow, side, silk) {
+  pins.forEach(([name, role, kind, label], i) => {
+    const hot = wired(name, kind);
+    const text = silk ? `<b>${label}</b><span class="n">${prefix}${i + 1}</span>`
+                      : `<b>${name}</b><small>${role}</small><span class="n">${prefix}${i + 1}</span>`;
+    add(el, `lbl ${side} ${silk && !marked(name, kind) ? "off silk" : kind}`, labelRow, i + 1, text);
+    add(el, `pin${hot ? " hot " + kind : ""}`, pinRow, i + 1);
+  });
+}
+const board = document.getElementById("board");
+row(board, topRow, "T", 1, 2, "T", false);
+row(board, bottomRow, "B", 5, 4, "B", false);
 
-const chipLeft = [
-  ["1 · 1OE", "GND", "gnd"], ["2 · 1A", "GPIO13", "wire"], ["3 · 1Y", "330Ω → DIN", "wire"],
-  ["4 · 2OE", "5V", "pwr"], ["5 · 2A", "GND", "gnd"], ["6 · 2Y", "No connection", "off"], ["7 · GND", "GND", "gnd"],
-];
-const chipRight = [
-  ["14 · VCC", "5V (VIN)", "pwr"], ["13 · 4OE", "5V", "pwr"], ["12 · 4A", "GND", "gnd"],
-  ["11 · 4Y", "No connection", "off"], ["10 · 3OE", "5V", "pwr"], ["9 · 3A", "GND", "gnd"], ["8 · 3Y", "No connection", "off"],
-];
-const chip = document.getElementById("chip");
-chipLeft.forEach(([pin, to, kind], i) => {
-  add(chip, `lbl L ${kind}`, i + 1, 1, `<b>${pin}</b><small>${to}</small>`);
-  add(chip, "leg", i + 1, 2);
-});
-chipRight.forEach(([pin, to, kind], i) => {
-  add(chip, "leg", i + 1, 4);
-  add(chip, `lbl R ${kind}`, i + 1, 5, `<b>${pin}</b><small>${to}</small>`);
-});
+// Turned over about the long edge: what was the bottom row is now at the top
+const under = document.getElementById("under");
+row(under, bottomRow, "B", 1, 2, "T", true);
+row(under, topRow, "T", 5, 4, "B", true);
 </script>
