@@ -114,7 +114,8 @@ static void reader(void *arg)
             beat_state_t st;
             beat_get(&st);
             taskENTER_CRITICAL(&beat_lock);
-            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding, st.coasting, st.energy, st.belief };
+            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding, st.coasting, st.energy, st.belief,
+                                    st.breakdown, st.pulse };
             beat_at_us = esp_timer_get_time();
             beats_per_us = st.bpm / 60e6;
             taskEXIT_CRITICAL(&beat_lock);
@@ -138,7 +139,8 @@ static void reader(void *arg)
             mic_beat(&b);
             ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f, energy %.2f, belief %.2f%s",
                      to_db(sqrtf(energy[MIC_SLOT] / blocks)), to_db(sqrtf(energy[1 - MIC_SLOT] / blocks)), peak_db,
-                     b.bpm, b.confidence, b.energy, b.belief, b.holding ? ", holding" : b.coasting ? ", coasting" : "");
+                     b.bpm, b.confidence, b.energy, b.belief,
+                     b.holding ? ", holding" : b.breakdown ? ", breakdown" : b.coasting ? ", coasting" : "");
 
             energy[0] = energy[1] = 0;
             peak_db = METER_FLOOR_DB - 30;

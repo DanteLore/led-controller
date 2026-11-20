@@ -248,7 +248,8 @@ function showDevice() {
   if (document.activeElement !== b) b.value = device.brightness;
   b.disabled = false;
   $('brightness-value').textContent = device.brightness + '%';
-  $('tempo').textContent = device.beat_found ? Math.round(device.bpm) + ' BPM, ' + Math.round(100 * (device.beat_belief || 0)) + '% sure' : 'no beat';
+  $('tempo').textContent = !device.beat_found ? 'no beat'
+    : Math.round(device.bpm) + ' BPM, ' + (device.breakdown ? 'breakdown' : Math.round(100 * (device.beat_belief || 0)) + '% sure');
   // The device stops the draft when its button is pressed
   if (live && !device.draft && Date.now() - liveSince > 4000) setLive(false);
   updateCardStatus();

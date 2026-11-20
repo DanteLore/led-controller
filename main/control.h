@@ -16,6 +16,7 @@ typedef struct {
     float beat_energy;  // how hard the music hits, 0–1
     bool record_wanted; // tapping started in Edit: a computer watching should record now
     float beat_belief;  // how sure the tracker is of the beat, 0–1
+    bool breakdown;     // a quiet passage: the beat's kept but the lights don't pulse
 } control_state_t;
 
 void control_select(int mode);

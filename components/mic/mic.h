@@ -23,6 +23,8 @@ typedef struct {
     bool coasting;      // beat unclear just now (a breakdown): running on at the locked tempo
     float energy;       // 0–1: how hard the music hits now
     float belief;       // 0–1: how sure the tracker is of the beat
+    bool breakdown;     // quiet passage with the beat faded: keep time, don't pulse
+    float pulse;        // 0–1: how hard to pulse on the beat now; patches use this
 } mic_beat_t;
 
 // The beat clock now, carried forward from the last analysis and a little

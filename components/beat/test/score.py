@@ -22,6 +22,15 @@ if 'breakdown' in name:
     hit = sum(1 for t in after if found and min(abs(f - t) for f in found) < 0.07)
     print(f'{name:24} first 4s after the drop: beats hit {hit}/{len(after)}')
     sys.exit(0)
+if 'song-change' in name:
+    # Seconds after the second song starts until the lights pulse on its beat
+    pulses = [(float(l.split()[1]), float(l.split()[4]), 'breakdown' in l) for l in lines if l.startswith('belief')]
+    tempo = {float(l.split()[1]): float(l.split()[3]) for l in lines if l.startswith('time')}
+    start = truth[0]
+    going = [t for t, p, bd in pulses if t >= start and p > 0.3 and not bd and abs(tempo.get(t, 0) / 95 - 1) < 0.03]
+    late = [t for t, p, bd in pulses if t >= start + 8 and bd]
+    print(f'{name:24} second song pulsing on its beat after {going[0] - start if going else 99:.0f}s; breakdown seconds after that: {len(late)}')
+    sys.exit(0)
 if 'then-silence' in name:
     end = truth[-1] + 60 / 128   # where the next beat would have been
     late = [f for f in found if f > end + 0.5]

@@ -86,3 +86,9 @@ start3 = round((start2 + 12) / beat) * beat
 b3, h3 = pattern(124, 12, start=start3)
 beats = [i * beat for i in range(int((start3 + 12) / beat))]
 render(f'{out}/pattern-change-124', beats, h1 + h2 + h3, start3 + 12)
+
+# A song change: house, 3s of silence, then quieter hip-hop. The second song
+# should get going again within a few seconds.
+b1, h1 = pattern(128, 20)
+b2, h2 = pattern(95, 25, start=23)
+render(f'{out}/song-change', b2, h1 + [(t, s, g * 0.4) for t, s, g in h2], 48, noise=0.0005)

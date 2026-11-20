@@ -51,6 +51,15 @@
 #define SURPRISE_FRAC  0.8f  // and only hits this strong against the music's kicks are a surprise
 #define HIT_FRAC       0.5f  // a hit is a punch or boom onset this strong against the music's own kicks
 #define TRUST_BELIEF   0.4f  // above this the tempo is trusted: half, double and 3:2 readings are ignored
+// A breakdown, as a dancer hears it: beats keep coming with no hits on them,
+// and the music has gone quieter or the belief has faded (a loud pad with no
+// kick is still a breakdown). The clock keeps time but the pulse stops, until
+// a firm hit on an expected beat (the drop) brings it straight back.
+#define BREAKDOWN_MISSES 3      // beats in a row with no hit (about 1.3s)...
+#define BREAKDOWN_QUIET  0.6f   // ...and quieter than this fraction of the music's level (about -4dB)
+#define BREAKDOWN_BELIEF 0.75f  // ...or belief below this
+#define GROOVE_BELIEF    0.6f   // and only once belief has reached this in the song: no groove, no breakdown
+#define PULSE_FALL       0.04f  // the pulse fades this fraction of the way per hop (about 0.4s)
 #define LOCKED_SWITCH  32    // at full belief, a different tempo must persist this many updates (8s),
 #define LOCKED_BETTER  1.5f  // fitting the music this much better than the locked tempo still does.
                              // Half, double or 3:2 never counts: that's a new drum pattern over
@@ -85,6 +94,10 @@ static float belief;                  // see BELIEF_UP
 static long confirmed_beat, judged_beat;   // the last beat a hit confirmed, and the last one judged
 static int quiet_until;               // frame before which surprise hits aren't counted again
 static float punch_level;             // the music's punch hits while the beat is clear
+static bool breakdown;
+static int misses;                    // expected beats in a row with no hit
+static bool grooving;                 // belief has built up in this song, so a breakdown is possible
+static float pulse_gate;              // 1 normally, fading to 0 in a breakdown
 static bool tempo_known;              // the tempo has been learnt from this music, not just the starting guess
 static int rephase_votes;             // updates in a row the phase has disagreed badly
 static int frames;
@@ -244,6 +257,8 @@ static void update_belief(void)
         if (beat != confirmed_beat) {
             belief += BELIEF_UP * (1 - belief);
             confirmed_beat = beat;
+            misses = 0;
+            breakdown = false;   // a firm hit on the beat: the drop, or the music carrying on
         }
     } else if (hit && frames >= quiet_until) {
         // A surprise: a strong hit that the beat grid, down to its quarters, can't explain
@@ -260,7 +275,22 @@ static void update_belief(void)
     if (from_beat > BEAT_WINDOW && beat != confirmed_beat && beat != judged_beat) {
         belief *= BELIEF_MISS;   // this beat's window has passed with no hit
         judged_beat = beat;
+        misses++;
     }
+}
+
+// Breakdown in or out, and the pulse the lights should show
+static void update_pulse(void)
+{
+    if (holding || !tempo_known)
+        breakdown = grooving = false;
+    else if (belief >= GROOVE_BELIEF)
+        grooving = true;
+    if (!breakdown && grooving && misses >= BREAKDOWN_MISSES
+             && ((music_level > 0 && loudness < BREAKDOWN_QUIET * music_level) || belief < BREAKDOWN_BELIEF))
+        breakdown = true;
+    float target = breakdown || holding ? 0 : 1;
+    pulse_gate = target > pulse_gate ? target : pulse_gate + (target - pulse_gate) * PULSE_FALL;
 }
 
 static float strongest_onset(int frames_back)
@@ -484,6 +514,22 @@ static bool update_phase(bool coasting_now)
     return true;
 }
 
+// The song has ended: wipe everything learnt from it, so the next one is judged
+// on its own: its tempo, its levels, and none of the old onsets to re-lock onto
+static void forget_song(void)
+{
+    coasting = tempo_known = breakdown = grooving = false;
+    coast_updates = misses = rephase_votes = disagreements = 0;
+    belief = music_level = correction = confidence = 0;
+    drum_level = onset_level = punch_level = 0;
+    onset_peak = bass_peak = punch_peak = 0;
+    confirmed_beat = judged_beat = -1;
+    memset(onsets, 0, sizeof(onsets));
+    memset(bass_onsets, 0, sizeof(bass_onsets));
+    memset(punch_onsets, 0, sizeof(punch_onsets));
+    period = 60 * frame_rate / BPM_PREFERRED;
+}
+
 // ---- Public ---------------------------------------------------------------------
 
 void beat_init(float sample_rate)
@@ -512,7 +558,9 @@ void beat_init(float sample_rate)
     fast_loudness = music_level = energy = onset_level = drum_level = 0;
     silent_frames = 0;
     rephase_votes = coast_updates = quiet_until = 0;
-    belief = punch_level = 0;
+    belief = punch_level = pulse_gate = 0;
+    breakdown = grooving = false;
+    misses = 0;
     confirmed_beat = judged_beat = -1;
     coasting = tempo_known = false;
     holding = true;
@@ -535,11 +583,7 @@ void beat_process(const float *samples)
     silent_frames = silent ? silent_frames + 1 : 0;
     if (silent_frames == SILENCE_FRAMES && !holding) {
         holding = true;
-        coasting = false;
-        coast_updates = 0;
-        tempo_known = false;
-        belief = music_level = 0;
-        correction = 0;
+        forget_song();
     }
 
     float bass, punch;
@@ -604,11 +648,9 @@ void beat_process(const float *samples)
                 correction = 0;
         } else {
             // No beat for a while: stop, and lock afresh when music returns
+            // Only on the way in: while holding, the onsets must build up for the next lock
+            if (!holding) forget_song();
             holding = true;
-            coasting = false;
-            coast_updates = 0;
-            tempo_known = false;
-            belief = 0;
         }
     }
 
@@ -616,6 +658,7 @@ void beat_process(const float *samples)
     // the next beat, so nothing pulses until the music has a beat again
     update_energy();
     update_belief();
+    update_pulse();
 
     // The clock never runs backwards, so a beat can't be counted twice
     float step = 1.0f / period + correction / UPDATE_EVERY;
@@ -636,6 +679,8 @@ void beat_get(beat_state_t *state)
         .coasting = coasting,
         .energy = energy,
         .belief = belief,
+        .breakdown = breakdown,
+        .pulse = energy * (0.35f + 0.65f * belief) * pulse_gate,
         .onset = latest_onset,
     };
 }

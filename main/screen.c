@@ -108,7 +108,7 @@ void screen_preview(const rgb16_t *frame, int count)
     st7789_draw_pixels(MARGIN_X, PREVIEW_Y, BAR_W, PREVIEW_H, buf);
 }
 
-void screen_mic(float level, float bpm, bool beat_found, float belief, bool on_beat)
+void screen_mic(float level, float bpm, bool beat_found, float belief, bool breakdown, bool on_beat)
 {
     char text[8];
     if (beat_found) snprintf(text, sizeof(text), "%3.0f", bpm);
@@ -117,7 +117,8 @@ void screen_mic(float level, float bpm, bool beat_found, float belief, bool on_b
     st7789_draw_string(BPM_X, MIC_Y - 1, text, beat_found ? COLOR_WHITE : COLOR_GREY, COLOR_BLACK);
     // Red through yellow to green as belief grows; dark when there's no beat
     int r = belief < 0.5f ? 255 : (int)(255 * (1 - belief) * 2), g = belief > 0.5f ? 255 : (int)(255 * belief * 2);
-    st7789_fill_rect(BELIEF_X, MIC_Y - 1, 8, 8, beat_found ? RGB565(r, g, 0) : RGB565(40, 40, 40));
+    uint16_t box = !beat_found ? RGB565(40, 40, 40) : breakdown ? RGB565(40, 120, 255) : RGB565(r, g, 0);
+    st7789_fill_rect(BELIEF_X, MIC_Y - 1, 8, 8, box);
     st7789_fill_rect(BEAT_DOT_X, MIC_Y - 1, 8, 8, on_beat ? COLOR_YELLOW : RGB565(40, 40, 40));
     int filled = MIC_BAR_W * level;
     if (filled > 0)
@@ -182,7 +183,7 @@ void screen_patch(const char *name, bool web_draft) {}
 void screen_brightness(int percent) {}
 void screen_speed(float multiplier, float position) {}
 void screen_preview(const rgb16_t *frame, int count) {}
-void screen_mic(float level, float bpm, bool beat_found, float belief, bool on_beat) {}
+void screen_mic(float level, float bpm, bool beat_found, float belief, bool breakdown, bool on_beat) {}
 void screen_text(const screen_line_t *lines, int count, const char *qr_text) {}
 void screen_text_line(int count, int i, const char *text, text_style_t style) {}
 
