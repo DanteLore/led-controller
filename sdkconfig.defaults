@@ -8,3 +8,7 @@ CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 # Saving WiFi settings writes flash, which pauses the cache; this keeps the
 # strip's RMT interrupt running meanwhile so a frame can't glitch
 CONFIG_RMT_TX_ISR_CACHE_SAFE=y
+
+# Per-task CPU time, read by /api/cpu
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

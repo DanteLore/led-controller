@@ -135,6 +135,15 @@ void control_get_state(control_state_t *out)
     taskEXIT_CRITICAL(&state_lock);
 }
 
+static frame_timing_t timing;
+
+void control_get_timing(frame_timing_t *out)
+{
+    taskENTER_CRITICAL(&state_lock);
+    *out = timing;
+    taskEXIT_CRITICAL(&state_lock);
+}
+
 static void publish_state(const settings_t *s, bool draft, float speed, const mic_beat_t *beat)
 {
     taskENTER_CRITICAL(&state_lock);
@@ -310,6 +319,7 @@ static void led_task(void *arg)
     bool redraw_patch = true, redraw_brightness = true, redraw_speed = true;
 
     uint32_t frames = 0, frames_at_heartbeat = 0;
+    int64_t spent_render = 0, spent_strip = 0, spent_screen = 0, spent_frame = 0;
     int64_t next_heartbeat_us = esp_timer_get_time() + HEARTBEAT_US;
 
     TickType_t last_wake = xTaskGetTickCount();
@@ -409,6 +419,7 @@ static void led_task(void *arg)
         uint32_t beat_milli = (uint32_t)(uint64_t)(beat.position * 1000);
 
         bool full_scale = false;
+        int64_t t_render = esp_timer_get_time();
         if (show.set) {
             // Pulses hit as hard as the music does, boldly only when the tracker
             // believes in the beat, and not at all in a breakdown
@@ -428,9 +439,13 @@ static void led_task(void *arg)
             full_scale = effects_test_full_scale(show.index);
         }
         library_unlock();
+        int64_t t_strip = esp_timer_get_time();
+        spent_render += t_strip - t_render;
 
         uint16_t level = full_scale ? LEVEL_FULL : (uint32_t)settings.brightness * LEVEL_FULL / BRIGHTNESS_MAX;
         show_frame(level);
+        int64_t t_screen = esp_timer_get_time();
+        spent_strip += t_screen - t_strip;
 
         // ---- Screen, as the switch picks it
         screen_t want = panel == PANEL_SETUP ? SCREEN_SETUP
@@ -463,8 +478,21 @@ static void led_task(void *arg)
         }
 
         publish_state(&settings, draft, speed, &beat);
+        int64_t t_end = esp_timer_get_time();
+        spent_screen += t_end - t_screen;
+        spent_frame += t_end - now;
 
         if (now >= next_heartbeat_us) {
+            uint32_t n = frames - frames_at_heartbeat;
+            if (n) {
+                taskENTER_CRITICAL(&state_lock);
+                timing = (frame_timing_t){
+                    .fps = n * 1e6f / (now - next_heartbeat_us + HEARTBEAT_US),
+                    .render_us = (float)spent_render / n, .strip_us = (float)spent_strip / n,
+                    .screen_us = (float)spent_screen / n, .frame_us = (float)spent_frame / n };
+                taskEXIT_CRITICAL(&state_lock);
+            }
+            spent_render = spent_strip = spent_screen = spent_frame = 0;
             ESP_LOGI(TAG, "Running: %s, brightness %d%%, speed %.2fx, %lu fps",
                      last_name, settings.brightness, speed,
                      (unsigned long)((frames - frames_at_heartbeat) * 1000000LL / (now - next_heartbeat_us + HEARTBEAT_US)));

@@ -6,6 +6,9 @@
 #include "mic.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -226,6 +229,56 @@ static esp_err_t audio_get(httpd_req_t *req)
     return err == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : err;
 }
 
+// Each task's share of one core over a one-second window, plus per-core load
+// worked out from the idle tasks
+#define CPU_MAX_TASKS 24
+
+static esp_err_t cpu_get(httpd_req_t *req)
+{
+    static TaskStatus_t before[CPU_MAX_TASKS], after[CPU_MAX_TASKS];
+    configRUN_TIME_COUNTER_TYPE t0, t1;
+    UBaseType_t n0 = uxTaskGetSystemState(before, CPU_MAX_TASKS, &t0);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    UBaseType_t n1 = uxTaskGetSystemState(after, CPU_MAX_TASKS, &t1);
+    double window = (double)(t1 - t0);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *tasks = cJSON_AddArrayToObject(root, "tasks");
+    double idle[2] = { 0, 0 };
+    for (UBaseType_t i = 0; i < n1; i++) {
+        configRUN_TIME_COUNTER_TYPE start = 0;
+        for (UBaseType_t j = 0; j < n0; j++)
+            if (before[j].xHandle == after[i].xHandle) start = before[j].ulRunTimeCounter;
+        double pct = window > 0 ? 100.0 * (after[i].ulRunTimeCounter - start) / window : 0;
+        BaseType_t core = xTaskGetCoreID(after[i].xHandle);
+        if (!strncmp(after[i].pcTaskName, "IDLE", 4) && core >= 0 && core < 2) idle[core] = pct;
+        cJSON *t = cJSON_CreateObject();
+        cJSON_AddStringToObject(t, "name", after[i].pcTaskName);
+        cJSON_AddNumberToObject(t, "core", core < 2 ? core : -1);
+        cJSON_AddNumberToObject(t, "percent", round(pct * 10) / 10);
+        cJSON_AddNumberToObject(t, "stack_free", after[i].usStackHighWaterMark);
+        cJSON_AddItemToArray(tasks, t);
+    }
+    cJSON *cores = cJSON_AddArrayToObject(root, "core_load");
+    for (int c = 0; c < 2; c++) cJSON_AddItemToArray(cores, cJSON_CreateNumber(round((100 - idle[c]) * 10) / 10));
+    frame_timing_t timing;
+    control_get_timing(&timing);
+    cJSON *frame = cJSON_AddObjectToObject(root, "frame");
+    cJSON_AddNumberToObject(frame, "fps", round(timing.fps * 10) / 10);
+    cJSON_AddNumberToObject(frame, "render_us", round(timing.render_us));
+    cJSON_AddNumberToObject(frame, "strip_us", round(timing.strip_us));
+    cJSON_AddNumberToObject(frame, "screen_us", round(timing.screen_us));
+    cJSON_AddNumberToObject(frame, "total_us", round(timing.frame_us));
+    cJSON_AddNumberToObject(root, "heap_free", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    cJSON_AddNumberToObject(root, "heap_min", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+    char *text = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, text);
+    free(text);
+    return err;
+}
+
 static void add(httpd_handle_t server, const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *))
 {
     httpd_uri_t route = { .uri = uri, .method = method, .handler = handler };
@@ -244,5 +297,6 @@ void web_start(httpd_handle_t server)
     add(server, "/api/state",    HTTP_GET,    state_get);
     add(server, "/api/state",    HTTP_POST,   state_post);
     add(server, "/api/audio",    HTTP_GET,    audio_get);
+    add(server, "/api/cpu",      HTTP_GET,    cpu_get);
     ESP_LOGI(TAG, "Patch editor ready");
 }

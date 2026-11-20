@@ -18,6 +18,18 @@ typedef struct {
     bool breakdown;     // a quiet passage: the beat's kept but the lights don't pulse
 } control_state_t;
 
+// Where the LED task's time goes, averaged over the last heartbeat: microseconds
+// per frame for each stage
+typedef struct {
+    float fps;
+    float render_us;    // patch engine
+    float strip_us;     // dithering and sending the frame to the strip
+    float screen_us;    // LCD drawing
+    float frame_us;     // the whole loop body
+} frame_timing_t;
+
+void control_get_timing(frame_timing_t *timing);
+
 void control_select(int mode);
 void control_set_brightness(int brightness);
 void control_get_state(control_state_t *state);
