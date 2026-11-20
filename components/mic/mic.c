@@ -34,6 +34,10 @@ static double beats_per_us;
 #define RECORD_BUFFER 16384   // bytes: about 0.4s of slack for the network
 static StreamBufferHandle_t recording;
 static atomic_bool recording_on;
+static int64_t recording_start_us;   // when the recording's first sample was heard; 0 until then
+static portMUX_TYPE tap_lock = portMUX_INITIALIZER_UNLOCKED;
+static float taps[MIC_TAPS_MAX];
+static int tap_count;
 
 // Second-order Butterworth high-pass, one per channel
 typedef struct { float b0, b1, b2, a1, a2, x1, x2, y1, y2; } biquad_t;
@@ -94,6 +98,9 @@ static void reader(void *arg)
                 if (c == MIC_SLOT) hop[i] = ac / FULL_SCALE;
             }
         if (atomic_load(&recording_on)) {
+            // The block just read ended now, so its first sample is a block earlier
+            if (!recording_start_us)
+                recording_start_us = esp_timer_get_time() - (int64_t)frames * 1000000 / MIC_SAMPLE_RATE;
             static int16_t out[FRAMES];
             for (int i = 0; i < frames; i++) {
                 float v = hop[i] * 32767;
@@ -107,7 +114,7 @@ static void reader(void *arg)
             beat_state_t st;
             beat_get(&st);
             taskENTER_CRITICAL(&beat_lock);
-            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding, st.coasting, st.energy };
+            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding, st.coasting, st.energy, st.belief };
             beat_at_us = esp_timer_get_time();
             beats_per_us = st.bpm / 60e6;
             taskEXIT_CRITICAL(&beat_lock);
@@ -129,9 +136,9 @@ static void reader(void *arg)
         if (now >= next_log) {
             mic_beat_t b;
             mic_beat(&b);
-            ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f, energy %.2f%s",
+            ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f, energy %.2f, belief %.2f%s",
                      to_db(sqrtf(energy[MIC_SLOT] / blocks)), to_db(sqrtf(energy[1 - MIC_SLOT] / blocks)), peak_db,
-                     b.bpm, b.confidence, b.energy, b.holding ? ", holding" : b.coasting ? ", coasting" : "");
+                     b.bpm, b.confidence, b.energy, b.belief, b.holding ? ", holding" : b.coasting ? ", coasting" : "");
 
             energy[0] = energy[1] = 0;
             peak_db = METER_FLOOR_DB - 30;
@@ -179,7 +186,39 @@ bool mic_record_start(void)
     if (!atomic_compare_exchange_strong(&recording_on, &expected, true))
         return false;
     xStreamBufferReset(recording);
+    taskENTER_CRITICAL(&tap_lock);
+    tap_count = 0;
+    recording_start_us = 0;
+    taskEXIT_CRITICAL(&tap_lock);
     return true;
+}
+
+bool mic_recording(void)
+{
+    return atomic_load(&recording_on);
+}
+
+float mic_record_seconds(void)
+{
+    if (!atomic_load(&recording_on) || !recording_start_us) return -1;
+    return (esp_timer_get_time() - recording_start_us) / 1e6f;
+}
+
+void mic_record_tap(int64_t when_us)
+{
+    taskENTER_CRITICAL(&tap_lock);
+    if (recording_start_us && tap_count < MIC_TAPS_MAX)
+        taps[tap_count++] = (when_us - recording_start_us) / 1e6f;
+    taskEXIT_CRITICAL(&tap_lock);
+}
+
+int mic_record_taps(float *seconds, int max)
+{
+    taskENTER_CRITICAL(&tap_lock);
+    int n = tap_count < max ? tap_count : max;
+    for (int i = 0; i < n; i++) seconds[i] = taps[i];
+    taskEXIT_CRITICAL(&tap_lock);
+    return n;
 }
 
 size_t mic_record_read(int16_t *samples, size_t max, int timeout_ms)

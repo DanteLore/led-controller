@@ -19,19 +19,45 @@
 #define CONFIDENCE_STOP  0.15f   // ...and dropped below this. Noise scores about 0.1, music 0.3 up
 #define QUIET_RMS     0.0018f // below about -55dBFS is silence, whatever the onsets look like
 #define LOG_SCALE   100.0f   // log(1 + LOG_SCALE·magnitude) compresses loud and quiet alike
-#define BASS_TOP_HZ  260.0f  // kick drums live below this
-#define BASS_WEIGHT  2.0f    // for phase: the kick marks the beat; hi-hats often sit between
+// Two parts of the kick do different jobs, as tapped recordings showed: its
+// boom (below 110Hz) reveals the tempo, while its punch (110-600Hz) shows
+// where the beat falls, because the boom band also carries bass lines, which
+// in dance music often sit on the off-beat
+#ifndef BASS_TOP_HZ
+#define BASS_BOTTOM_HZ  0.0f
+#define BASS_TOP_HZ  110.0f  // the boom, for the tempo
+#define BASS_WEIGHT  3.0f
+#endif
+#ifndef PUNCH_TOP_HZ
+#define PUNCH_BOTTOM_HZ 110.0f   // the punch, for the phase
+#define PUNCH_TOP_HZ    600.0f
+#define PUNCH_WEIGHT      3.0f
+#endif
 #define ONSET_CAP    3.0f    // no onset counts for more than this many times the level of recent
                              // strong hits, so one bang on the table can't outweigh the music
 #define PEAK_RISE    0.05f   // that level climbs this fraction of the way to a bigger hit, per frame...
 #define PEAK_FALL    0.998f  // ...and sinks by this factor per frame (halving in about 4s)
-#define LOCKED_AFTER    8    // updates (2s) of steady beat before the tempo and phase are trusted
-#define LOCKED_SWITCH  32    // once trusted, a different tempo must persist this many updates (8s),
+// Belief in the beat, 0-1, earned like a listener's: a firm hit where a beat
+// was expected raises it, a predicted beat with no hit lets it drift down (a
+// breakdown), and a strong hit where nothing was expected knocks it. High
+// belief makes the tracker stiff and the lights bold; low belief leaves it
+// open to correction.
+#define BELIEF_UP      0.15f // a confirmed beat closes this much of the gap to 1
+#define BELIEF_MISS    0.93f // a beat with no hit keeps this much (halving in about 10 beats)
+#define BELIEF_DOWN    0.12f // a surprise hit takes away this much of it
+#define BEAT_WINDOW    0.12f // a hit within this many beats of the beat confirms it (about 50ms)
+#define GRID_WINDOW    0.07f // hits this close to a half or quarter beat are neither: bass lines,
+                             // hats and syncopation live there
+#define SURPRISE_FRAC  0.8f  // and only hits this strong against the music's kicks are a surprise
+#define HIT_FRAC       0.5f  // a hit is a punch or boom onset this strong against the music's own kicks
+#define TRUST_BELIEF   0.4f  // above this the tempo is trusted: half, double and 3:2 readings are ignored
+#define LOCKED_SWITCH  32    // at full belief, a different tempo must persist this many updates (8s),
 #define LOCKED_BETTER  1.5f  // fitting the music this much better than the locked tempo still does.
                              // Half, double or 3:2 never counts: that's a new drum pattern over
                              // the same beat, not a new tempo
-#define LOCKED_NUDGE    0.06f // ...and the phase moves at most this far per update,
-#define LOCKED_REPHASE 32    // unless it disagrees by over a quarter beat for this many updates (8s)
+#define LOCKED_NUDGE    0.03f // ...and the phase moves at most this far per update (0.2 at no belief),
+#define LOCKED_REPHASE 32    // unless it disagrees by over a quarter beat for this many updates (8s;
+                             // 1s at no belief)
 #define SILENCE_DROP   0.05f // a sudden fall to this fraction of the music's level (-26dB), or below
 #define SILENCE_FRAMES  26   // QUIET_RMS, for this many hops (0.3s) is the song ending: stop at once
 #define FAST_SMOOTH    0.2f  // the quick loudness behind that follows about 60ms
@@ -46,13 +72,20 @@ static float rate, frame_rate;
 static float window[BEAT_FFT], hann[BEAT_FFT];
 static float last_log[BINS];
 static float onsets[HISTORY];      // ring, newest at onset_head - 1
-static float bass_onsets[HISTORY]; // the same from the bass alone
+static float bass_onsets[HISTORY]; // the same from the boom alone
 static float bass_recent[THRESHOLD_N];
-static int bass_bins;
+static float punch_onsets[HISTORY];  // and from the punch
+static float punch_recent[THRESHOLD_N];
+static float punch_peak;
+static int bass_bins, bass_first, punch_first, punch_last;
 static int onset_head;
 static float flux_recent[THRESHOLD_N];
 static float onset_peak, bass_peak;   // levels behind the outlier cap
-static int locked;                    // updates in a row with a beat, so the tempo and phase are trusted
+static float belief;                  // see BELIEF_UP
+static long confirmed_beat, judged_beat;   // the last beat a hit confirmed, and the last one judged
+static int quiet_until;               // frame before which surprise hits aren't counted again
+static float punch_level;             // the music's punch hits while the beat is clear
+static bool tempo_known;              // the tempo has been learnt from this music, not just the starting guess
 static int rephase_votes;             // updates in a row the phase has disagreed badly
 static int frames;
 
@@ -111,22 +144,23 @@ static float onset_at(int ago)
     return onsets[ring_index(ago)];
 }
 
-// Full-spectrum flux, plus the bass part of it in *bass
-static float spectral_flux(float *bass)
+// Full-spectrum flux, plus the boom and punch parts of it
+static float spectral_flux(float *bass, float *punch)
 {
     static complex_t x[BEAT_FFT];
     for (int i = 0; i < BEAT_FFT; i++)
         x[i] = (complex_t){ window[i] * hann[i], 0 };
     fft(x, BEAT_FFT);
     float flux = 0;
-    *bass = 0;
+    *bass = *punch = 0;
     for (int k = 1; k < BINS; k++) {
         float magnitude = sqrtf(x[k].re * x[k].re + x[k].im * x[k].im);
         float level = logf(1 + LOG_SCALE * magnitude);
         float rise = level - last_log[k];
         if (rise > 0) {
             flux += rise;
-            if (k <= bass_bins) *bass += rise;
+            if (k <= bass_bins && k >= bass_first) *bass += rise;
+            if (k >= punch_first && k <= punch_last) *punch += rise;
         }
         last_log[k] = level;
     }
@@ -185,6 +219,50 @@ static float strongest_bass(int frames_back)
     return strongest;
 }
 
+static float strongest_punch(int frames_back)
+{
+    float strongest = 0;
+    for (int i = 0; i < frames_back; i++)
+        if (punch_onsets[ring_index(i)] > strongest) strongest = punch_onsets[ring_index(i)];
+    return strongest;
+}
+
+// Judges the newest hop against the beat clock: see BELIEF_UP
+static void update_belief(void)
+{
+    if (holding || !tempo_known) {
+        belief = 0;
+        return;
+    }
+    double nearest = floor(position + 0.5);
+    float from_beat = (float)(position - nearest);   // -0.5 to 0.5
+    long beat = (long)nearest;
+    int newest = ring_index(0);
+    bool hit = (punch_level > 0 && punch_onsets[newest] >= HIT_FRAC * punch_level)
+            || (drum_level > 0 && bass_onsets[newest] >= HIT_FRAC * drum_level);
+    if (hit && fabsf(from_beat) <= BEAT_WINDOW) {
+        if (beat != confirmed_beat) {
+            belief += BELIEF_UP * (1 - belief);
+            confirmed_beat = beat;
+        }
+    } else if (hit && frames >= quiet_until) {
+        // A surprise: a strong hit that the beat grid, down to its quarters, can't explain
+        float quarters = fabsf(from_beat) * 4;
+        bool on_grid = fabsf(quarters - roundf(quarters)) * 0.25f < GRID_WINDOW;
+        int newest_hit = ring_index(0);
+        bool strong = (punch_level > 0 && punch_onsets[newest_hit] >= SURPRISE_FRAC * punch_level)
+                   || (drum_level > 0 && bass_onsets[newest_hit] >= SURPRISE_FRAC * drum_level);
+        if (on_grid || !strong) return;
+        belief -= BELIEF_DOWN * belief;
+        quiet_until = frames + (int)(0.15f * period);   // one hit lasts a few hops: count it once
+        return;
+    }
+    if (from_beat > BEAT_WINDOW && beat != confirmed_beat && beat != judged_beat) {
+        belief *= BELIEF_MISS;   // this beat's window has passed with no hit
+        judged_beat = beat;
+    }
+}
+
 static float strongest_onset(int frames_back)
 {
     float strongest = 0;
@@ -217,18 +295,33 @@ static bool drums_back(void)
 
 static float locked_fit;   // how well the current tempo fits, against the best, from the last estimate
 
+// How set in its ways the tracker is: stiff when it believes in the beat
+static bool trusting(void) { return tempo_known && belief >= TRUST_BELIEF; }
+static int votes_needed(int at_none, int at_full) { return at_none + (int)(belief * (at_full - at_none)); }
+
 // Best beat period in frames, and how clear it is (0–1)
 static float estimate_period(float *clarity)
 {
     int lag_min = (int)floorf(60 * frame_rate / BPM_MAX);
     int lag_max = (int)ceilf(60 * frame_rate / BPM_MIN);
-    // Without the average taken out, any steady noise would look rhythmic
+    // The same bass-weighted onsets as the phase uses: the kick is usually
+    // the clearest marker of the beat. Without the average taken out, any
+    // steady noise would look rhythmic.
+    float all = 0, bass = 0;
+    for (int i = 0; i < HISTORY; i++) {
+        all += onsets[i];
+        bass += bass_onsets[i];
+    }
+    all = all > 0 ? HISTORY / all : 0;
+    bass = bass > 0 ? BASS_WEIGHT * HISTORY / bass : 0;
     float mean = 0;
-    for (int i = 0; i < HISTORY; i++)
-        mean += onset_at(i);
+    for (int i = 0; i < HISTORY; i++) {
+        history[i] = onset_at(i) * all + bass_onsets[ring_index(i)] * bass;
+        mean += history[i];
+    }
     mean /= HISTORY;
     for (int i = 0; i < HISTORY; i++)
-        history[i] = onset_at(i) - mean;
+        history[i] -= mean;
     static float r[HISTORY];
     int lag_top = lag_max * 3 + 2;
     if (lag_top >= HISTORY) lag_top = HISTORY - 1;
@@ -244,11 +337,11 @@ static float estimate_period(float *clarity)
     float preferred_lag = 60 * frame_rate / BPM_PREFERRED;
     int best = lag_min;
     float best_score = -1;
-    static float score[HISTORY];
+    static float score[HISTORY], comb[HISTORY];
     for (int lag = lag_min; lag <= lag_max; lag++) {
-        float comb = r[lag] + 0.5f * r[2 * lag < HISTORY ? 2 * lag : lag] + 0.25f * r[3 * lag < HISTORY ? 3 * lag : lag];
+        comb[lag] = r[lag] + 0.5f * r[2 * lag < HISTORY ? 2 * lag : lag] + 0.25f * r[3 * lag < HISTORY ? 3 * lag : lag];
         float octaves = log2f(lag / preferred_lag) / PRIOR_OCTAVES;
-        score[lag] = comb * expf(-0.5f * octaves * octaves);
+        score[lag] = comb[lag] * expf(-0.5f * octaves * octaves);
 
         if (score[lag] > best_score) {
             best_score = score[lag];
@@ -259,10 +352,12 @@ static float estimate_period(float *clarity)
     int current = (int)(period + 0.5f);
     locked_fit = current >= lag_min && current <= lag_max && best_score > 0 ? score[current] / best_score : 0;
 
-    // Parabolic interpolation for a period between whole frames
+    // Parabolic interpolation for a period between whole frames, on the comb
+    // without the prior: the prior picks the peak, but tilted towards 120 BPM
+    // it would also pull the peak's position, reading fast songs slow
     float refined = best;
     if (best > lag_min && best < lag_max) {
-        float a = score[best - 1], b = score[best], c = score[best + 1];
+        float a = comb[best - 1], b = comb[best], c = comb[best + 1];
         float d = a - 2 * b + c;
         if (d < 0) refined = best + 0.5f * (a - c) / d;
     }
@@ -278,7 +373,7 @@ static void update_tempo(float estimate)
     float ratio = estimate / period;
     // Once locked, a half, double or 3:2 reading is the same beat in a new pattern
     // or any reading the locked tempo still fits nearly as well
-    if (locked >= LOCKED_AFTER) {
+    if (trusting()) {
         static const float related[] = { 0.5f, 2.0f, 1.5f, 0.6667f, 0.75f, 1.3333f };
         for (int i = 0; i < 6; i++)
             if (fabsf(ratio / related[i] - 1) < 0.05f)
@@ -289,7 +384,7 @@ static void update_tempo(float estimate)
         }
     }
     if (ratio > 0.95f && ratio < 1.05f) {
-        period += (estimate - period) * (locked >= LOCKED_AFTER ? LOCKED_SMOOTH : TEMPO_SMOOTH);
+        period += (estimate - period) * (trusting() ? LOCKED_SMOOTH : TEMPO_SMOOTH);
         disagreements = 0;
         return;
     }
@@ -300,7 +395,7 @@ static void update_tempo(float estimate)
     else
         disagreements = 1;
     pending_period = estimate;
-    if (disagreements >= (locked >= LOCKED_AFTER ? LOCKED_SWITCH : TEMPO_SWITCH)) {
+    if (disagreements >= votes_needed(TEMPO_SWITCH, LOCKED_SWITCH)) {
         period = estimate;
         disagreements = 0;
     }
@@ -315,15 +410,15 @@ static float phase_signal[HISTORY];   // newest first
 
 static float frames_since_beat(float *clarity)
 {
-    float all = 0, bass = 0;
+    float all = 0, punch = 0;
     for (int i = 0; i < HISTORY; i++) {
         all += onsets[i];
-        bass += bass_onsets[i];
+        punch += punch_onsets[i];
     }
     all = all > 0 ? HISTORY / all : 0;
-    bass = bass > 0 ? BASS_WEIGHT * HISTORY / bass : 0;
+    punch = punch > 0 ? PUNCH_WEIGHT * HISTORY / punch : 0;
     for (int i = 0; i < HISTORY; i++)
-        phase_signal[i] = onsets[ring_index(i)] * all + bass_onsets[ring_index(i)] * bass;
+        phase_signal[i] = onsets[ring_index(i)] * all + punch_onsets[ring_index(i)] * punch;
 
     int span = (int)period;
     float best_score = -1, best = 0, total = 0;
@@ -361,9 +456,9 @@ static bool update_phase(bool coasting_now)
     if (error < -0.5f) error += 1;
     // Once the beat is trusted, the grid only drifts: a bang or a busy bar can
     // nudge it a little, and only a long, consistent disagreement moves it far
-    if (locked >= LOCKED_AFTER) {
+    if (tempo_known) {
         rephase_votes = fabsf(error) > 0.25f ? rephase_votes + 1 : 0;
-        if (rephase_votes < LOCKED_REPHASE) {
+        if (rephase_votes < votes_needed(4, LOCKED_REPHASE)) {
             // Running ahead (negative error) means the beat is a touch slower than we think
             // Only small, steady errors: a big one is a busy bar, not a wrong tempo
             if (fabsf(error) < 0.1f && !coasting_now) {
@@ -372,7 +467,8 @@ static bool update_phase(bool coasting_now)
                 period *= 1 - trim;
             }
             float nudge = error * PHASE_GAIN;
-            correction = nudge > LOCKED_NUDGE ? LOCKED_NUDGE : nudge < -LOCKED_NUDGE ? -LOCKED_NUDGE : nudge;
+            float cap = LOCKED_NUDGE + (1 - belief) * (0.2f - LOCKED_NUDGE);   // bolder when unsure
+            correction = nudge > cap ? cap : nudge < -cap ? -cap : nudge;
             return true;
         }
         rephase_votes = 0;
@@ -402,14 +498,23 @@ void beat_init(float sample_rate)
     memset(flux_recent, 0, sizeof(flux_recent));
     memset(bass_onsets, 0, sizeof(bass_onsets));
     memset(bass_recent, 0, sizeof(bass_recent));
+    memset(punch_onsets, 0, sizeof(punch_onsets));
+    memset(punch_recent, 0, sizeof(punch_recent));
+    punch_peak = 0;
+    punch_first = (int)(PUNCH_BOTTOM_HZ * BEAT_FFT / rate + 0.5f);
+    punch_last = (int)(PUNCH_TOP_HZ * BEAT_FFT / rate);
     bass_bins = (int)(BASS_TOP_HZ * BEAT_FFT / rate);
+    bass_first = (int)(BASS_BOTTOM_HZ * BEAT_FFT / rate + 0.5f);
+    if (bass_first < 1) bass_first = 1;
     onset_head = frames = disagreements = 0;
     period = 60 * frame_rate / BPM_PREFERRED;
     position = confidence = latest_onset = loudness = correction = onset_peak = bass_peak = 0;
     fast_loudness = music_level = energy = onset_level = drum_level = 0;
     silent_frames = 0;
-    locked = rephase_votes = coast_updates = 0;
-    coasting = false;
+    rephase_votes = coast_updates = quiet_until = 0;
+    belief = punch_level = 0;
+    confirmed_beat = judged_beat = -1;
+    coasting = tempo_known = false;
     holding = true;
 }
 
@@ -431,16 +536,18 @@ void beat_process(const float *samples)
     if (silent_frames == SILENCE_FRAMES && !holding) {
         holding = true;
         coasting = false;
-        locked = coast_updates = 0;
-        music_level = 0;
+        coast_updates = 0;
+        tempo_known = false;
+        belief = music_level = 0;
         correction = 0;
     }
 
-    float bass;
-    float flux = spectral_flux(&bass);
+    float bass, punch;
+    float flux = spectral_flux(&bass, &punch);
     latest_onset = onset_strength(flux, flux_recent, &onset_peak, onset_level);
     onsets[onset_head] = latest_onset;
     bass_onsets[onset_head] = onset_strength(bass, bass_recent, &bass_peak, drum_level);
+    punch_onsets[onset_head] = onset_strength(punch, punch_recent, &punch_peak, 0);
     onset_head = (onset_head + 1) % HISTORY;
     frames++;
 
@@ -455,7 +562,6 @@ void beat_process(const float *samples)
             // Following the music
             holding = coasting = false;
             coast_updates = 0;
-            locked++;
             // The tempo only learns from a confident beat, so a fade-out can't drag it
             // Tempo and phase only learn from fresh, confident evidence, so the
             // seconds after the drums stop can't drag them
@@ -463,11 +569,22 @@ void beat_process(const float *samples)
             bool confident = confidence >= CONFIDENCE_START && fresh;
             bool hitting = drum_level <= 0 || strongest_bass((int)frame_rate) >= 0.5f * drum_level;
             if (confident) {
-                update_tempo(estimate);
+                // The first confident reading sets the tempo outright; only
+                // confident readings count towards trusting it, so the starting
+                // guess can never be what it locks onto
+                if (!tempo_known) {
+                    period = estimate;
+                    tempo_known = true;
+                    disagreements = 0;
+                } else {
+                    update_tempo(estimate);
+                }
                 music_level += (loudness - music_level) * 0.1f;
                 // How hard the kicks hit while the music is clear. It only creeps
                 // down (halving in about 6s), so a weak moment can't reset it
                 float bass = strongest_bass(2 * (int)frame_rate), all = strongest_onset(2 * (int)frame_rate);
+                float punch = strongest_punch(2 * (int)frame_rate);
+                punch_level = punch > punch_level * 0.97f ? punch : punch_level * 0.97f;
                 drum_level = bass > drum_level * 0.97f ? bass : drum_level * 0.97f;
                 onset_level = all > onset_level * 0.97f ? all : onset_level * 0.97f;
             }
@@ -475,7 +592,7 @@ void beat_process(const float *samples)
                 update_phase(false);
             else
                 correction = 0;
-        } else if (locked >= LOCKED_AFTER && silent_frames < SILENCE_FRAMES) {
+        } else if (tempo_known && silent_frames < SILENCE_FRAMES) {
             // A breakdown, a fill or a new pattern: as long as the music plays,
             // run on at the locked tempo and phase, as a listener would, and
             // don't let the unclear audio pull them about
@@ -489,13 +606,16 @@ void beat_process(const float *samples)
             // No beat for a while: stop, and lock afresh when music returns
             holding = true;
             coasting = false;
-            locked = coast_updates = 0;
+            coast_updates = 0;
+            tempo_known = false;
+            belief = 0;
         }
     }
 
     // The clock runs on between updates; while holding it waits just short of
     // the next beat, so nothing pulses until the music has a beat again
     update_energy();
+    update_belief();
 
     // The clock never runs backwards, so a beat can't be counted twice
     float step = 1.0f / period + correction / UPDATE_EVERY;
@@ -515,6 +635,7 @@ void beat_get(beat_state_t *state)
         .holding = holding,
         .coasting = coasting,
         .energy = energy,
+        .belief = belief,
         .onset = latest_onset,
     };
 }

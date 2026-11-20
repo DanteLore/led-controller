@@ -135,11 +135,11 @@ void control_get_state(control_state_t *out)
     taskEXIT_CRITICAL(&state_lock);
 }
 
-static void publish_state(const settings_t *s, bool draft, float speed, const mic_beat_t *beat)
+static void publish_state(const settings_t *s, bool draft, float speed, const mic_beat_t *beat, bool record_wanted)
 {
     taskENTER_CRITICAL(&state_lock);
     state = (control_state_t){ s->mode, draft, s->brightness, speed, LED_COUNT,
-                               beat->bpm, beat->confidence, beat->holding, beat->energy };
+                               beat->bpm, beat->confidence, beat->holding, beat->energy, record_wanted, beat->belief };
     taskEXIT_CRITICAL(&state_lock);
 }
 
@@ -263,13 +263,84 @@ static void draw_setup(const network_t *n)
         screen_text(LINES({ "SETUP", TEXT_HEADING }, { "", 0 }, { "JOINING WIFI", TEXT_NORMAL }, { w->ssid, TEXT_NORMAL }), NULL);
 }
 
-// A placeholder until patches can be edited on the device. No QR code, so
-// it can't be mistaken for Setup.
-static void draw_edit(const network_t *n)
+// ---- Tap the beat ---------------------------------------------------------------
+//
+// The Edit position: tap a knob on every beat and the screen scores the lights
+// against you as you go. During a recording (from the editor page), the taps
+// are also saved with the audio, as the answer key for tuning the tracker.
+
+#define TAP_KEEP      16          // recent taps the scores cover
+#define TAP_HIT_MS    70          // the lights count as on your tap within this
+#define TAP_LINES      9
+
+typedef struct {
+    int64_t at[TAP_KEEP];         // when each tap's contacts closed
+    float offset_ms[TAP_KEEP];    // where the lights' beat fell from each tap
+    int count;                    // taps so far, the last TAP_KEEP kept
+} taps_t;
+
+static void tap(taps_t *t, int64_t when, const mic_beat_t *beat, int64_t now)
 {
-    screen_text(LINES({ "EDIT MODE", TEXT_HEADING }, { "", 0 }, { "COMING SOON.", TEXT_NORMAL }, { "", 0 },
-                      { "FOR NOW, EDIT IN", TEXT_NORMAL }, { "THE WEB EDITOR:", TEXT_NORMAL },
-                      { "SETUP SHOWS WHERE", TEXT_DIM }), NULL);
+    // The beat clock as the lights showed it at the tap
+    double position = beat->position - (now - when) * beat->bpm / 60e6;
+    double phase = position - floor(position);
+    if (phase > 0.5) phase -= 1;   // a tap just before the lights' beat is negative
+    int i = t->count % TAP_KEEP;
+    t->at[i] = when;
+    t->offset_ms[i] = beat->holding ? NAN : -phase * 60000 / beat->bpm;
+    t->count++;
+}
+
+static void draw_tap_screen(void)
+{
+    screen_text(LINES({ "TAP THE BEAT", TEXT_HEADING }, { "", 0 },
+                      { "TAP A KNOB ON EVERY BEAT", TEXT_NORMAL }, { "", 0 },
+                      { "", 0 }, { "", 0 }, { "", 0 }, { "", 0 }, { "", 0 }), NULL);
+}
+
+static void draw_tap_values(const taps_t *t, const mic_beat_t *beat, bool wanted)
+{
+    char line[48];
+    int n = t->count < TAP_KEEP ? t->count : TAP_KEEP;
+
+    // Your tempo, from the median gap between recent taps
+    float gaps[TAP_KEEP];
+    int g = 0;
+    for (int k = 1; k < n; k++) {
+        int64_t a = t->at[(t->count - k - 1) % TAP_KEEP], b = t->at[(t->count - k) % TAP_KEEP];
+        if (b - a < 2000000) gaps[g++] = (b - a) / 1e6f;
+    }
+    for (int x = 1; x < g; x++)
+        for (int y = x; y > 0 && gaps[y - 1] > gaps[y]; y--) { float s = gaps[y]; gaps[y] = gaps[y - 1]; gaps[y - 1] = s; }
+    if (g >= 3) snprintf(line, sizeof(line), "YOU       %5.1f BPM", 60 / gaps[g / 2]);
+    else snprintf(line, sizeof(line), "YOU         --- BPM");
+    screen_text_line(TAP_LINES, 4, line, TEXT_NORMAL);
+
+    if (beat->holding) snprintf(line, sizeof(line), "LIGHTS      --- BPM  (NO BEAT)");
+    else snprintf(line, sizeof(line), "LIGHTS    %5.1f BPM", beat->bpm);
+    screen_text_line(TAP_LINES, 5, line, TEXT_NORMAL);
+
+    // Where the lights land against your taps, and how often they're on them
+    float sum = 0;
+    int scored = 0, hits = 0;
+    for (int k = 0; k < n; k++) {
+        float o = t->offset_ms[(t->count - 1 - k) % TAP_KEEP];
+        if (isnan(o)) continue;
+        sum += o;
+        scored++;
+        if (fabsf(o) <= TAP_HIT_MS) hits++;
+    }
+    if (scored) snprintf(line, sizeof(line), "LIGHTS %+5.0fMS %s YOU", sum / scored, sum >= 0 ? "AFTER " : "BEFORE");
+    else snprintf(line, sizeof(line), "LIGHTS    ---MS FROM YOU");
+    screen_text_line(TAP_LINES, 6, line, TEXT_NORMAL);
+    snprintf(line, sizeof(line), "ON YOUR LAST TAPS %2d/%-2d", hits, scored);
+    screen_text_line(TAP_LINES, 7, line, scored && hits * 4 >= scored * 3 ? TEXT_NORMAL : TEXT_DIM);
+
+    float rec = mic_record_seconds();
+    if (rec >= 0) snprintf(line, sizeof(line), "RECORDING %3.0fS, %d TAPS", rec, t->count);
+    else if (wanted) snprintf(line, sizeof(line), "STARTING RECORDING...");
+    else snprintf(line, sizeof(line), "FIRST TAP RECORDS, IF A COMPUTER WATCHES");
+    screen_text_line(TAP_LINES, 8, line, rec >= 0 || wanted ? TEXT_HEADING : TEXT_DIM);
 }
 
 // ---- Main -------------------------------------------------------------------
@@ -305,6 +376,12 @@ static void led_task(void *arg)
     network_t network = {0};
     screen_t drawn = SCREEN_NONE;
     int64_t next_wifi_check = 0;
+    bool was_recording = false, network_changed = false;
+    taps_t taps = {0};
+    int64_t tap_closed = 0, next_tap_draw = 0;
+    // The first tap after entering Edit asks for a recording (tools/record_taps.py
+    // watches for it); one per visit to Edit
+    bool record_wanted = false, recorded_this_visit = false;
     bool redraw_patch = true, redraw_brightness = true, redraw_speed = true;
 
     uint32_t frames = 0, frames_at_heartbeat = 0;
@@ -315,24 +392,46 @@ static void led_task(void *arg)
         int64_t now = esp_timer_get_time();
 
         // ---- Inputs
+        network_changed = false;
         int brightness_delta = encoder_get_delta(left);
         int speed_delta = encoder_get_delta(right);
         int step = pressed(&right_button, right, now) - pressed(&left_button, left, now);
+        // In Edit, or while recording for tuning, a press is a tapped beat,
+        // timed from the moment the contacts closed rather than after the debounce
+        bool recording = mic_recording();
+        bool tapped = false;
+        if ((recording || panel == PANEL_EDIT) && step) {
+            int64_t closed = step > 0 ? right_button.raw_since : left_button.raw_since;
+            if (recording) mic_record_tap(closed);
+            tap_closed = closed;
+            tapped = true;
+            step = 0;
+        }
+        if (recording != was_recording) {
+            was_recording = recording;
+            network_changed = true;   // the title line shows the recording, then the address again
+        }
 
         bool switch_moved = debounce(&switch_setup, switch_raw() == PANEL_SETUP, now);
         switch_moved |= debounce(&switch_edit, switch_raw() == PANEL_EDIT, now);
         if (switch_moved) {
             panel = switch_setup.settled ? PANEL_SETUP : switch_edit.settled ? PANEL_EDIT : PANEL_PLAY;
             ESP_LOGI(TAG, "Switch: %s", PANEL_NAMES[panel]);
+            record_wanted = recorded_this_visit = false;
+            taps = (taps_t){0};
         }
+        if (tapped && panel == PANEL_EDIT && !recorded_this_visit && !recording) {
+            record_wanted = recorded_this_visit = true;
+            ESP_LOGI(TAG, "Recording wanted");
+        }
+        if (recording) record_wanted = false;
 
-        bool network_changed = false;
         if (now >= next_wifi_check) {
             next_wifi_check = now + WIFI_CHECK_US;
             char was[sizeof(network.qr)];
             strlcpy(was, network.qr, sizeof(was));
             read_network(&network);
-            network_changed = strcmp(was, network.qr) != 0;
+            network_changed |= strcmp(was, network.qr) != 0;
         }
 
         // ---- Which patch. A press leaves the web editor's draft for the
@@ -408,7 +507,10 @@ static void led_task(void *arg)
 
         bool full_scale = false;
         if (show.set) {
-            patch_render(show.set, show.index, ms, beat_milli, beat.energy, frame, LED_COUNT);
+            // Pulses hit as hard as the music does, and boldly only when the
+            // tracker believes in the beat
+            float pulse = beat.energy * (0.35f + 0.65f * beat.belief);
+            patch_render(show.set, show.index, ms, beat_milli, pulse, frame, LED_COUNT);
             int playing = patch_playlist_step(show.set, show.index, ms);
             if (playing >= 0 && playing != last_step) {
                 const patch_t *p = &show.set->patches[show.index];
@@ -434,7 +536,10 @@ static void led_task(void *arg)
                       :                        SCREEN_PLAY;
         if (want != drawn || (network_changed && want == SCREEN_SETUP)) {
             if (want == SCREEN_SETUP) draw_setup(&network);
-            if (want == SCREEN_EDIT)  draw_edit(&network);
+            if (want == SCREEN_EDIT) {
+                draw_tap_screen();
+                next_tap_draw = 0;
+            }
             if (want == SCREEN_PLAY) {
                 screen_play();
                 draw_network(&network);
@@ -442,7 +547,10 @@ static void led_task(void *arg)
             }
             drawn = want;
         } else if (want == SCREEN_PLAY && network_changed) {
-            draw_network(&network);
+            if (recording)
+                screen_network("TAP THE BEAT", false, true);
+            else
+                draw_network(&network);
         }
         if (drawn == SCREEN_PLAY) {
             if (redraw_patch)      screen_patch(show.name, draft);
@@ -451,13 +559,20 @@ static void led_task(void *arg)
             redraw_patch = redraw_brightness = redraw_speed = false;
             if (++frames % PREVIEW_EVERY == 0) {
                 screen_preview(frame, LED_COUNT);
-                screen_mic(mic_level(), beat.bpm, !beat.holding, beat.coasting, !beat.holding && beat.position - floor(beat.position) < 0.15);
+                screen_mic(mic_level(), beat.bpm, !beat.holding, beat.belief, !beat.holding && beat.position - floor(beat.position) < 0.15);
             }
         } else {
             frames++;
         }
 
-        publish_state(&settings, draft, speed, &beat);
+        if (tapped)
+            tap(&taps, tap_closed, &beat, now);
+        if (drawn == SCREEN_EDIT && (tapped || now >= next_tap_draw)) {
+            draw_tap_values(&taps, &beat, record_wanted);
+            next_tap_draw = now + 500000;
+        }
+
+        publish_state(&settings, draft, speed, &beat, record_wanted);
 
         if (now >= next_heartbeat_us) {
             ESP_LOGI(TAG, "Running: %s, brightness %d%%, speed %.2fx, %lu fps",

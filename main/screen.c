@@ -19,8 +19,9 @@
 #define PREVIEW_H     22
 #define MIC_Y        139
 #define MIC_BAR_X    (MARGIN_X + 32)
-#define MIC_BAR_W    (BAR_W - 32 - 64)   // leaves room for the BPM and the beat dot
+#define MIC_BAR_W    (BAR_W - 32 - 76)   // leaves room for the BPM, the belief box and the beat dot
 #define BPM_X        (MIC_BAR_X + MIC_BAR_W + 8)
+#define BELIEF_X     (MARGIN_X + BAR_W - 20)
 #define BEAT_DOT_X   (MARGIN_X + BAR_W - 8)
 #define MIC_BAR_H      6
 #define HINT_Y       152
@@ -107,13 +108,16 @@ void screen_preview(const rgb16_t *frame, int count)
     st7789_draw_pixels(MARGIN_X, PREVIEW_Y, BAR_W, PREVIEW_H, buf);
 }
 
-void screen_mic(float level, float bpm, bool beat_found, bool coasting, bool on_beat)
+void screen_mic(float level, float bpm, bool beat_found, float belief, bool on_beat)
 {
     char text[8];
     if (beat_found) snprintf(text, sizeof(text), "%3.0f", bpm);
     else snprintf(text, sizeof(text), "---");
     // Coasting through a breakdown is still following the beat, so it stays white
     st7789_draw_string(BPM_X, MIC_Y - 1, text, beat_found ? COLOR_WHITE : COLOR_GREY, COLOR_BLACK);
+    // Red through yellow to green as belief grows; dark when there's no beat
+    int r = belief < 0.5f ? 255 : (int)(255 * (1 - belief) * 2), g = belief > 0.5f ? 255 : (int)(255 * belief * 2);
+    st7789_fill_rect(BELIEF_X, MIC_Y - 1, 8, 8, beat_found ? RGB565(r, g, 0) : RGB565(40, 40, 40));
     st7789_fill_rect(BEAT_DOT_X, MIC_Y - 1, 8, 8, on_beat ? COLOR_YELLOW : RGB565(40, 40, 40));
     int filled = MIC_BAR_W * level;
     if (filled > 0)
@@ -142,14 +146,25 @@ static void draw_qr(const char *text)
     }
 }
 
+#define TEXT_WIDE_CHARS 37   // a text line with no QR code beside it
+
+void screen_text_line(int count, int i, const char *text, text_style_t style)
+{
+    static const uint16_t colours[] = { [TEXT_HEADING] = COLOR_CYAN, [TEXT_NORMAL] = COLOR_WHITE, [TEXT_DIM] = COLOR_GREY };
+    char padded[TEXT_WIDE_CHARS + 1];
+    snprintf(padded, sizeof(padded), "%-*s", TEXT_WIDE_CHARS, text);
+    int y = (ST7789_HEIGHT - count * TEXT_LINE_H) / 2 + i * TEXT_LINE_H;
+    st7789_draw_string(TEXT_X, y, padded, colours[style], COLOR_BLACK);
+}
+
 void screen_text(const screen_line_t *lines, int count, const char *qr_text)
 {
     static const uint16_t colours[] = { [TEXT_HEADING] = COLOR_CYAN, [TEXT_NORMAL] = COLOR_WHITE, [TEXT_DIM] = COLOR_GREY };
     st7789_fill(COLOR_BLACK);
     int y = (ST7789_HEIGHT - count * TEXT_LINE_H) / 2;
     for (int i = 0; i < count; i++, y += TEXT_LINE_H) {
-        char clipped[SCREEN_LINE_CHARS + 1];
-        snprintf(clipped, sizeof(clipped), "%s", lines[i].text);
+        char clipped[TEXT_WIDE_CHARS + 1];
+        snprintf(clipped, qr_text ? SCREEN_LINE_CHARS + 1 : sizeof(clipped), "%s", lines[i].text);
         st7789_draw_string(TEXT_X, y, clipped, colours[lines[i].style], COLOR_BLACK);
     }
     if (qr_text)
@@ -167,7 +182,8 @@ void screen_patch(const char *name, bool web_draft) {}
 void screen_brightness(int percent) {}
 void screen_speed(float multiplier, float position) {}
 void screen_preview(const rgb16_t *frame, int count) {}
-void screen_mic(float level, float bpm, bool beat_found, bool coasting, bool on_beat) {}
+void screen_mic(float level, float bpm, bool beat_found, float belief, bool on_beat) {}
 void screen_text(const screen_line_t *lines, int count, const char *qr_text) {}
+void screen_text_line(int count, int i, const char *text, text_style_t style) {}
 
 #endif

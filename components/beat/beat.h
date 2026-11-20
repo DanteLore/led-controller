@@ -36,6 +36,7 @@ typedef struct {
     bool coasting;      // beat unclear just now, so running on at the locked tempo
     float energy;       // 0–1: how hard the music hits now, against its own kicks while the beat
                         // was clear. Jumps up on a hit, falls away over about half a second
+    float belief;       // 0–1: how sure it is of the beat, earned from hits landing where expected
     float onset;        // latest onset strength, for meters
 } beat_state_t;
 

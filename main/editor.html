@@ -167,6 +167,16 @@
   </div>
   </div>
 
+  <details id="tune-details" style="margin-top:20px">
+    <summary class="dim">Record for tuning the beat tracker</summary>
+    <p class="dim">Records what the mic hears while you tap either knob button on every beat, then saves the audio and your taps as two files. They're the answer key for tuning: put them in the project's <code>test-audio</code> folder. While recording, the knob buttons tap instead of changing patch.</p>
+    <div class="row">
+      <select id="tune-secs"><option value="30">30 seconds</option><option value="60">60 seconds</option></select>
+      <button id="tune-start">Start recording</button>
+      <span id="tune-status" class="dim"></span>
+    </div>
+  </details>
+
   <details id="json-details" style="margin-top:20px">
     <summary class="dim">Library as JSON</summary>
     <p class="dim">The whole library, as saved on the device. Edit it here or in a text editor, then Apply.</p>
@@ -238,7 +248,7 @@ function showDevice() {
   if (document.activeElement !== b) b.value = device.brightness;
   b.disabled = false;
   $('brightness-value').textContent = device.brightness + '%';
-  $('tempo').textContent = device.beat_found ? Math.round(device.bpm) + ' BPM' : 'no beat';
+  $('tempo').textContent = device.beat_found ? Math.round(device.bpm) + ' BPM, ' + Math.round(100 * (device.beat_belief || 0)) + '% sure' : 'no beat';
   // The device stops the draft when its button is pressed
   if (live && !device.draft && Date.now() - liveSince > 4000) setLive(false);
   updateCardStatus();
@@ -772,6 +782,38 @@ $('reset').onclick = async () => {
   }
 };
 $('json-apply').onclick = () => replaceLibrary($('json').value, 'JSON applied: not saved yet');
+
+function saveFile(name, blob) {
+  const a = el('a', { download: name, href: URL.createObjectURL(blob) });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('tune-start').onclick = async () => {
+  if (!device) return $('tune-status').textContent = 'Not connected to the controller';
+  const secs = Number($('tune-secs').value);
+  const button = $('tune-start'), status = $('tune-status');
+  button.disabled = true;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    const left = Math.max(0, secs - Math.floor((Date.now() - started) / 1000));
+    status.textContent = `Recording: tap a knob on every beat, ${left}s left`;
+  }, 250);
+  try {
+    const audio = await fetch('/api/audio?secs=' + secs);
+    if (!audio.ok) throw new Error(await audio.text());
+    const wav = await audio.blob();
+    const taps = await (await fetch('/api/taps')).json();
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    saveFile(`tune-${stamp}.wav`, wav);
+    saveFile(`tune-${stamp}.taps.json`, new Blob([JSON.stringify(taps)], { type: 'application/json' }));
+    status.textContent = `Saved, with ${taps.taps.length} taps`;
+  } catch (e) {
+    status.textContent = 'Recording failed: ' + e.message;
+  }
+  clearInterval(timer);
+  button.disabled = false;
+};
 
 function replaceLibrary(text, message) {
   let obj;

@@ -91,6 +91,7 @@ int main(int argc, char **argv)
         if (start >= next_report) {
             printf("time %.0f bpm %.1f confidence %.2f %s energy %.2f\n", t, st.bpm, st.confidence,
                    st.holding ? "holding" : st.coasting ? "coasting" : "-", st.energy);
+            printf("belief %.0f %.2f\n", t, st.belief);
             next_report += rate;
         }
     }

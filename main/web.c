@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static const char *TAG = "web";
 
@@ -155,6 +156,8 @@ static esp_err_t state_get(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "beat_confidence", s.beat_confidence);
     cJSON_AddBoolToObject(root, "beat_found", !s.beat_holding);
     cJSON_AddNumberToObject(root, "beat_energy", s.beat_energy);
+    cJSON_AddBoolToObject(root, "record_wanted", s.record_wanted);
+    cJSON_AddNumberToObject(root, "beat_belief", s.beat_belief);
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!json)
@@ -223,6 +226,24 @@ static esp_err_t audio_get(httpd_req_t *req)
     return err == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : err;
 }
 
+// The beats tapped on the knobs during the last recording, in seconds from its start
+static esp_err_t taps_get(httpd_req_t *req)
+{
+    static float taps[MIC_TAPS_MAX];
+    int n = mic_record_taps(taps, MIC_TAPS_MAX);
+    cJSON *root = cJSON_CreateObject();
+    cJSON *list = cJSON_AddArrayToObject(root, "taps");
+    for (int i = 0; i < n; i++)
+        cJSON_AddItemToArray(list, cJSON_CreateNumber(roundf(taps[i] * 10000) / 10000));
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json)
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+    esp_err_t err = send_json(req, json);
+    cJSON_free(json);
+    return err;
+}
+
 static void add(httpd_handle_t server, const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *))
 {
     httpd_uri_t route = { .uri = uri, .method = method, .handler = handler };
@@ -241,5 +262,6 @@ void web_start(httpd_handle_t server)
     add(server, "/api/state",    HTTP_GET,    state_get);
     add(server, "/api/state",    HTTP_POST,   state_post);
     add(server, "/api/audio",    HTTP_GET,    audio_get);
+    add(server, "/api/taps",     HTTP_GET,    taps_get);
     ESP_LOGI(TAG, "Patch editor ready");
 }

@@ -21,7 +21,8 @@ typedef struct {
     float confidence;   // 0–1
     bool holding;       // no beat for a while: the position waits at the end of a beat
     bool coasting;      // beat unclear just now (a breakdown): running on at the locked tempo
-    float energy;       // 0–1: how hard the music hits now; patches pulse with this
+    float energy;       // 0–1: how hard the music hits now
+    float belief;       // 0–1: how sure the tracker is of the beat
 } mic_beat_t;
 
 // The beat clock now, carried forward from the last analysis and a little
@@ -36,3 +37,12 @@ void mic_beat(mic_beat_t *beat);
 bool mic_record_start(void);
 size_t mic_record_read(int16_t *samples, size_t max, int timeout_ms);
 void mic_record_stop(void);
+bool mic_recording(void);
+float mic_record_seconds(void);   // into the current recording, or -1 if none
+
+// Beats tapped by a person during a recording, as the answer key for tuning.
+// Times are esp_timer microseconds; they're kept as seconds from the
+// recording's first sample, until the next recording starts.
+#define MIC_TAPS_MAX 512
+void mic_record_tap(int64_t when_us);
+int mic_record_taps(float *seconds, int max);

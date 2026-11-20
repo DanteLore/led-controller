@@ -6,3 +6,4 @@ sdkconfig.old
 secrets.env
 dependencies.lock
 build-devkit/
+test-audio/
