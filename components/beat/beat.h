@@ -20,8 +20,9 @@
 //
 // Songs rarely change tempo, so once locked it's sticky: a bang on the table
 // or a busy bar can only nudge it. Through a quiet breakdown it coasts at the
-// locked tempo and phase, ready for the drop, and only stops after a long
-// spell without a beat, or a short one of near silence.
+// locked tempo and phase, ready for the drop, with the pulse off (only an
+// obvious beat moves the lights), and stops after 2 minutes without a beat, or
+// a short spell of near silence.
 
 #include <stdbool.h>
 

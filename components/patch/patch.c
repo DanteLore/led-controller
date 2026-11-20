@@ -124,6 +124,20 @@ static float glow_value(const patch_osc_t *o, int slot, int led, int count, uint
     return o->beat ? v * energy : v;
 }
 
+// A blend of a free oscillator and one on the beat gives the beat its share
+// only as the music pulses: with no beat, the free one has the whole range, so
+// embers glow as normal in a quiet room and flare on the beat when music plays.
+// The beat's value is already scaled by the energy, so unscale it here.
+static float blend(const patch_t *p, float a, float b, float energy)
+{
+    float wa = p->balance, wb = 1 - p->balance;
+    if (p->a.beat == p->b.beat) return wa * a + wb * b;
+    if (p->b.beat) wb *= energy; else wa *= energy;
+    if (wa + wb <= 0) return 0;
+    if (energy > 0) { if (p->b.beat) b /= energy; else a /= energy; }
+    return (wa * a + wb * b) / (wa + wb);
+}
+
 static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, float energy, rgb16_t *frame, int count)
 {
     for (int led = 0; led < count; led++) {
@@ -132,7 +146,7 @@ static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, flo
             float mix = glow_value(&p->a, 0, led, count, ms, beat_milli, energy);
             if (p->has_b) {
                 float b = glow_value(&p->b, 1, led, count, ms, beat_milli, energy);
-                mix = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
+                mix = p->multiply ? mix * b : blend(p, mix, b, energy);
             }
             glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
             level = p->floor + (p->ceiling - p->floor) * glow;

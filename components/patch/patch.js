@@ -114,6 +114,16 @@ function glow_value(o, slot, led, count, ms, beat_milli, energy) {
     return o.beat ? v * energy : v;
 }
 
+// See blend() in patch.c
+function blend(p, a, b, energy) {
+    let wa = p.balance, wb = 1 - p.balance;
+    if (p.a.beat === p.b.beat) return wa * a + wb * b;
+    if (p.b.beat) wb *= energy; else wa *= energy;
+    if (wa + wb <= 0) return 0;
+    if (energy > 0) { if (p.b.beat) b /= energy; else a /= energy; }
+    return (wa * a + wb * b) / (wa + wb);
+}
+
 function render_patch(p, ms, beat_milli, energy, frame, count) {
     for (let led = 0; led < count; led++) {
         let glow = 1, level = 1;
@@ -121,7 +131,7 @@ function render_patch(p, ms, beat_milli, energy, frame, count) {
             let mix = glow_value(p.a, 0, led, count, ms, beat_milli, energy);
             if (p.has_b) {
                 const b = glow_value(p.b, 1, led, count, ms, beat_milli, energy);
-                mix = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;
+                mix = p.multiply ? mix * b : blend(p, mix, b, energy);
             }
             glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
             level = p.floor + (p.ceiling - p.floor) * glow;

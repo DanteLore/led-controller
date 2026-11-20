@@ -59,6 +59,9 @@
 #define BREAKDOWN_QUIET  0.6f   // ...and quieter than this fraction of the music's level (about -4dB)
 #define BREAKDOWN_BELIEF 0.75f  // ...or belief below this
 #define GROOVE_BELIEF    0.6f   // and only once belief has reached this in the song: no groove, no breakdown
+#define LOCK_UPDATES     8      // a beat must be clear for this many updates in a row (2s) before it's
+                                // followed from silence, so a lucky moment of chatter can't start it
+#define COAST_SECONDS    120    // and with no drop for this long, the music has stopped: forget the song
 #define PULSE_FALL       0.04f  // the pulse fades this fraction of the way per hop (about 0.4s)
 #define LOCKED_SWITCH  32    // at full belief, a different tempo must persist this many updates (8s),
 #define LOCKED_BETTER  1.5f  // fitting the music this much better than the locked tempo still does.
@@ -110,6 +113,7 @@ static float correction;           // phase still to be corrected, spread over t
 static float confidence;
 static bool holding, coasting;
 static int coast_updates;
+static int clear_updates;             // updates in a row the beat has been clear enough to lock onto
 static float drum_level;              // bass hits before the beat went quiet: their return means the drop
 static float onset_level;             // the same for the full-spectrum onsets
 static float energy;
@@ -289,7 +293,11 @@ static void update_pulse(void)
     if (!breakdown && grooving && misses >= BREAKDOWN_MISSES
              && ((music_level > 0 && loudness < BREAKDOWN_QUIET * music_level) || belief < BREAKDOWN_BELIEF))
         breakdown = true;
-    float target = breakdown || holding ? 0 : 1;
+    // Only dance to an obvious beat: while it's unclear (coasting) the clock
+    // keeps time, but chatter or the TV landing on a beat now and then can't
+    // set the lights going. A real drop makes the beat clear again within a
+    // second or so, and the pulse comes straight back.
+    float target = breakdown || holding || coasting ? 0 : 1;
     pulse_gate = target > pulse_gate ? target : pulse_gate + (target - pulse_gate) * PULSE_FALL;
 }
 
@@ -557,7 +565,7 @@ void beat_init(float sample_rate)
     position = confidence = latest_onset = loudness = correction = onset_peak = bass_peak = 0;
     fast_loudness = music_level = energy = onset_level = drum_level = 0;
     silent_frames = 0;
-    rephase_votes = coast_updates = quiet_until = 0;
+    rephase_votes = coast_updates = clear_updates = quiet_until = 0;
     belief = punch_level = pulse_gate = 0;
     breakdown = grooving = false;
     misses = 0;
@@ -601,6 +609,8 @@ void beat_process(const float *samples)
         confidence += (clarity - confidence) * 0.3f;
         bool clear = confidence >= (holding || coasting ? CONFIDENCE_START : CONFIDENCE_STOP)
                   && loudness >= QUIET_RMS && silent_frames < SILENCE_FRAMES;
+        clear_updates = clear ? clear_updates + 1 : 0;
+        if (holding && clear_updates < LOCK_UPDATES) clear = false;
 
         if (clear) {
             // Following the music
@@ -636,7 +646,8 @@ void beat_process(const float *samples)
                 update_phase(false);
             else
                 correction = 0;
-        } else if (tempo_known && silent_frames < SILENCE_FRAMES) {
+        } else if (tempo_known && silent_frames < SILENCE_FRAMES
+                   && coast_updates * UPDATE_EVERY < COAST_SECONDS * frame_rate) {
             // A breakdown, a fill or a new pattern: as long as the music plays,
             // run on at the locked tempo and phase, as a listener would, and
             // don't let the unclear audio pull them about
