@@ -67,6 +67,7 @@ typedef struct {
 
     // Colour: a palette position for each LED, from its glow or oscillator c
     bool colour_by_osc;
+    bool colour_by_heat;      // from the blend with the beat's share kept: see patch.c
     patch_osc_t c;
     bool steps;               // hard steps between colours, not smooth blends
     bool wrap;                // last colour blends back round to the first

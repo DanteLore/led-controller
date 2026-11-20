@@ -134,7 +134,7 @@ static bool parse_colour(const char *s, rgb16_t *out)
 
 static const char *const MIXES[]   = { "blend", "multiply" };
 static const char *const BLENDS[]  = { "smooth", "steps" };
-static const char *const SOURCES[] = { "glow", "osc" };
+static const char *const SOURCES[] = { "glow", "osc", "heat" };
 
 static void read_glow(reader_t *r, const cJSON *glow, patch_t *p)
 {
@@ -183,7 +183,9 @@ static void read_colour(reader_t *r, const cJSON *colour, patch_t *p)
     }
     p->steps = choice(r, colour, "blend", BLENDS, 2, 0) == 1;
     p->wrap = flag(r, colour, "wrap");
-    p->colour_by_osc = choice(r, colour, "source", SOURCES, 2, 0) == 1;
+    int source = choice(r, colour, "source", SOURCES, 3, 0);
+    p->colour_by_osc = source == 1;
+    p->colour_by_heat = source == 2;
     if (p->colour_by_osc) {
         const cJSON *osc = cJSON_GetObjectItemCaseSensitive(colour, "osc");
         if (!osc) fail(r, "colour source osc needs an osc");

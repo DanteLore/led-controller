@@ -141,17 +141,24 @@ static float blend(const patch_t *p, float a, float b, float energy)
 static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, float energy, rgb16_t *frame, int count)
 {
     for (int led = 0; led < count; led++) {
-        float glow = 1, level = 1;
+        float glow = 1, level = 1, heat = 1;
         if (p->has_glow) {
             float mix = glow_value(&p->a, 0, led, count, ms, beat_milli, energy);
+            heat = mix;
             if (p->has_b) {
                 float b = glow_value(&p->b, 1, led, count, ms, beat_milli, energy);
+                // Heat keeps the beat's share even with no beat, so the free
+                // oscillator only climbs its own share of the palette and the
+                // beat takes it the rest of the way: embers stay orange to
+                // yellow in a quiet room and burn white hot on the beat
+                heat = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
                 mix = p->multiply ? mix * b : blend(p, mix, b, energy);
             }
             glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
             level = p->floor + (p->ceiling - p->floor) * glow;
         }
-        float pos = p->colour_by_osc ? osc_value(&p->c, 2, led, count, ms, beat_milli) : glow;
+        float pos = p->colour_by_osc ? osc_value(&p->c, 2, led, count, ms, beat_milli)
+                  : p->colour_by_heat ? heat : glow;
         rgb16_t c = palette_colour(p, pos);
         frame[led] = (rgb16_t){
             (uint16_t)(c.r * level + 0.5f),

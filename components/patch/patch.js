@@ -126,17 +126,20 @@ function blend(p, a, b, energy) {
 
 function render_patch(p, ms, beat_milli, energy, frame, count) {
     for (let led = 0; led < count; led++) {
-        let glow = 1, level = 1;
+        let glow = 1, level = 1, heat = 1;
         if (p.has_glow) {
             let mix = glow_value(p.a, 0, led, count, ms, beat_milli, energy);
+            heat = mix;
             if (p.has_b) {
                 const b = glow_value(p.b, 1, led, count, ms, beat_milli, energy);
+                heat = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;   // see patch.c
                 mix = p.multiply ? mix * b : blend(p, mix, b, energy);
             }
             glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
             level = p.floor + (p.ceiling - p.floor) * glow;
         }
-        const pos = p.colour_by_osc ? osc_value(p.c, 2, led, count, ms, beat_milli) : glow;
+        const pos = p.colour_by_osc ? osc_value(p.c, 2, led, count, ms, beat_milli)
+                  : p.colour_by_heat ? heat : glow;
         const c = palette_colour(p, pos);
         frame[led] = [
             Math.floor(c[0] * level + 0.5),
@@ -280,7 +283,9 @@ function read_colour(r, colour, p) {
     p.palette_linear = p.palette.map(c => c.map(v => Math.pow(v / 65535, PATCH_GAMMA)));
     p.steps = choice(r, colour, 'blend', ['smooth', 'steps'], 0) === 1;
     p.wrap = flag(r, colour, 'wrap');
-    p.colour_by_osc = choice(r, colour, 'source', ['glow', 'osc'], 0) === 1;
+    const source = choice(r, colour, 'source', ['glow', 'osc', 'heat'], 0);
+    p.colour_by_osc = source === 1;
+    p.colour_by_heat = source === 2;
     if (p.colour_by_osc) {
         if (!has(colour, 'osc')) r.fail('colour source osc needs an osc');
         p.c = read_osc(r, colour.osc, 'colour osc');
@@ -322,7 +327,7 @@ function read_playlist(r, list, patches, p) {
 }
 
 function read_patch(r, obj, patches) {
-    const p = { has_glow: false, has_b: false, multiply: false, colour_by_osc: false,
+    const p = { has_glow: false, has_b: false, multiply: false, colour_by_osc: false, colour_by_heat: false,
                 steps: false, wrap: false, palette_count: 0, playlist_count: 0 };
     const name = has(obj, 'name') ? obj.name : undefined;
     if (typeof name !== 'string' || !name.length || utf8_length(name) > PATCH_NAME_MAX)

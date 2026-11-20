@@ -548,7 +548,7 @@ function colourEditor(p) {
       checkbox('Wrap: last colour blends back to the first', !!c.wrap, on => { store(c, 'wrap', on, false); changed(false); })));
   }
   box.append(field('Picked by', dropdown(c, 'source', 'glow',
-    [['glow', 'Brightness: dim LEDs get the first colour'], ['osc', 'Its own oscillator']], true)));
+    [['glow', 'Brightness: dim LEDs get the first colour'], ['heat', 'Heat: the beat lifts it up the palette'], ['osc', 'Its own oscillator']], true)));
   if (c.source === 'osc') {
     if (!c.osc) c.osc = { shape: 'saw', period: 10, spread: 1 };
     box.append(oscEditor('Colour oscillator', c.osc));

@@ -90,11 +90,11 @@
       "glow": {
         "a": { "shape": "sine", "period": [3, 9], "scatter": 1 },
         "b": { "shape": "decay", "clock": "beat", "period": 1 },
-        "balance": 0.45,
+        "balance": 0.5,
         "power": 1.6,
         "floor": 0.12
       },
-      "colour": { "palette": ["#FF3A00", "#FF940C", "#FFE0A0"], "source": "glow" }
+      "colour": { "palette": ["#FF3A00", "#FF940C", "#FFE0A0"], "source": "heat" }
     },
     {
       "name": "Warm",

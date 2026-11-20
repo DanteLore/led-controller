@@ -83,7 +83,7 @@ Modes are patches (see **Patches** below), edited from a phone or laptop. The pr
 | Whites | Whole strip easing warm white → cool white → warm over 30s |
 | Beat pulse | Whole strip hits on every beat and fades, a new colour each beat (4-colour cycle) |
 | Beat chase | A pulse runs along the strip once per beat, colours drifting over 16 beats |
-| Beat embers | Embers, with every beat flaring them brighter |
+| Beat embers | Embers, with every beat flaring them brighter: orange to yellow in a quiet room, burning white hot on the beat |
 | Pattern | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
 
 Always after the patches, in C:
@@ -158,13 +158,13 @@ A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8
     "palette": ["#FF3A00", "#FF940C"],    // 1–12 colours
     "blend": "smooth",                    // or "steps"
     "wrap": false,                        // last colour blends back to the first
-    "source": "glow"                      // or "osc", with "osc": { ... } for the colour
+    "source": "glow"                      // or "heat"; or "osc", with "osc": { ... } for the colour
   } }
 ```
 
 - **Oscillator:** `shape` sine | triangle | saw | square | noise | decay (default sine), `clock` time | beat (default time: with beat, periods count beats from the mic, so 1 = every beat, 4 = every bar; in the glow a beat oscillator is scaled by the beat energy, and blended with a time oscillator it takes its share only as the music pulses, so with no beat the time one has the full range: Beat embers glows like Embers in a quiet room and flares on the beat when music plays), `period` seconds (default 1; 0 holds still; `[shortest, longest]` gives each LED its own), `phase` start point in cycles, `spread` cycles across the strip (the wave travels; minus goes the other way), `scatter` 0–1 random start point per LED. All give 0–1: sine, triangle and square start at 0 and peak half way; saw ramps up; noise eases between random values once per period; decay jumps to 1 and fades (a cubic curve), like a drum hit
 - **Glow:** a, or a and b blended or multiplied, raised to `power` (above 1 lingers dim), then scaled to `floor`…`ceiling`. That is the LED's brightness
-- **Colour:** with `"source": "glow"` the shaped glow (before floor and ceiling) picks the palette position, so dim LEDs get the first colour. Smooth blends happen in linear light so mixes stay equal-power
+- **Colour:** with `"source": "glow"` the shaped glow (before floor and ceiling) picks the palette position, so dim LEDs get the first colour. `"heat"` is the same but keeps the beat oscillator's share even with no beat, so the free oscillator only climbs its own share of the palette (balance 0.5 = the first half) and the beat takes it the rest of the way. Smooth blends happen in linear light so mixes stay equal-power
 - **Playlist:** `{"name": "Demo", "playlist": [{"patch": "Rainbow", "secs": 30, "speed": [0.5, 10]}, ...]}` plays other patches in turn; `speed` is a number or `[start, end]` for a ramp. Playlists can't play playlists
 - "Random" values come from hashing the LED's position, so they're fixed per LED and nothing is stored: the whole patch is a function of time, like the old effects
 - The engine is C in `components/patch/` (no ESP-IDF calls apart from cJSON) and `patch.js` is a line-for-line JavaScript copy for the editor's preview. After changing either, run `components/patch/test/run.sh`: it builds the C on the Mac, renders the presets with both and checks they agree, and checks both reject the files in `test/bad/` with the same message
