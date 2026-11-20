@@ -89,7 +89,8 @@ int main(int argc, char **argv)
         }
         last_beat = st.position;
         if (start >= next_report) {
-            printf("time %.0f bpm %.1f confidence %.2f %s\n", t, st.bpm, st.confidence, st.holding ? "holding" : "");
+            printf("time %.0f bpm %.1f confidence %.2f %s energy %.2f\n", t, st.bpm, st.confidence,
+                   st.holding ? "holding" : st.coasting ? "coasting" : "-", st.energy);
             next_report += rate;
         }
     }

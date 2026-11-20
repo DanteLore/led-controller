@@ -12,6 +12,16 @@
 //  3. Phase: the beat position that lines up best with recent onsets steers
 //     a free-running beat clock, like a phase-locked loop. The clock runs on
 //     between onsets, so lights can land on the beat rather than after it.
+//
+// Two things come out, like rhythm and dancing: the beat clock, which keeps
+// time through everything, and the energy, how hard the music is hitting right
+// now. Lights can pulse with the energy and keep time with the clock, so they
+// go quiet in a breakdown and come back on the beat for the drop.
+//
+// Songs rarely change tempo, so once locked it's sticky: a bang on the table
+// or a busy bar can only nudge it. Through a quiet breakdown it coasts at the
+// locked tempo and phase, ready for the drop, and only stops after a long
+// spell without a beat, or a short one of near silence.
 
 #include <stdbool.h>
 
@@ -22,7 +32,10 @@ typedef struct {
     double position;    // beats since starting; the fraction is the phase within a beat
     float bpm;
     float confidence;   // 0–1: how clearly the music has a beat
-    bool holding;       // quiet or no clear beat: the clock waits at the end of a beat
+    bool holding;       // no beat for a while: the clock waits at the end of a beat
+    bool coasting;      // beat unclear just now, so running on at the locked tempo
+    float energy;       // 0–1: how hard the music hits now, against its own kicks while the beat
+                        // was clear. Jumps up on a hit, falls away over about half a second
     float onset;        // latest onset strength, for meters
 } beat_state_t;
 

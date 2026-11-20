@@ -5,6 +5,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/stream_buffer.h"
 #include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -29,6 +30,10 @@ static portMUX_TYPE beat_lock = portMUX_INITIALIZER_UNLOCKED;
 static mic_beat_t beat_at;
 static int64_t beat_at_us;
 static double beats_per_us;
+
+#define RECORD_BUFFER 16384   // bytes: about 0.4s of slack for the network
+static StreamBufferHandle_t recording;
+static atomic_bool recording_on;
 
 // Second-order Butterworth high-pass, one per channel
 typedef struct { float b0, b1, b2, a1, a2, x1, x2, y1, y2; } biquad_t;
@@ -88,12 +93,21 @@ static void reader(void *arg)
                 block[c] += ac * ac;
                 if (c == MIC_SLOT) hop[i] = ac / FULL_SCALE;
             }
+        if (atomic_load(&recording_on)) {
+            static int16_t out[FRAMES];
+            for (int i = 0; i < frames; i++) {
+                float v = hop[i] * 32767;
+                out[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : (int16_t)v;
+            }
+            xStreamBufferSend(recording, out, frames * sizeof(int16_t), 0);   // drops if the reader falls behind
+        }
+
         if (frames == BEAT_HOP) {
             beat_process(hop);
             beat_state_t st;
             beat_get(&st);
             taskENTER_CRITICAL(&beat_lock);
-            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding };
+            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding, st.coasting, st.energy };
             beat_at_us = esp_timer_get_time();
             beats_per_us = st.bpm / 60e6;
             taskEXIT_CRITICAL(&beat_lock);
@@ -115,9 +129,9 @@ static void reader(void *arg)
         if (now >= next_log) {
             mic_beat_t b;
             mic_beat(&b);
-            ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f%s",
+            ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f, energy %.2f%s",
                      to_db(sqrtf(energy[MIC_SLOT] / blocks)), to_db(sqrtf(energy[1 - MIC_SLOT] / blocks)), peak_db,
-                     b.bpm, b.confidence, b.holding ? ", holding" : "");
+                     b.bpm, b.confidence, b.energy, b.holding ? ", holding" : b.coasting ? ", coasting" : "");
 
             energy[0] = energy[1] = 0;
             peak_db = METER_FLOOR_DB - 30;
@@ -149,6 +163,7 @@ void mic_start(int pin_sck, int pin_ws, int pin_sd, int core)
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(channel, &cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(channel));
     beat_init(MIC_SAMPLE_RATE);
+    recording = xStreamBufferCreate(RECORD_BUFFER, 1);
     xTaskCreatePinnedToCore(reader, "mic", 4096, NULL, 5, NULL, core);
     ESP_LOGI(TAG, "Listening at %dHz", MIC_SAMPLE_RATE);
 }
@@ -156,6 +171,25 @@ void mic_start(int pin_sck, int pin_ws, int pin_sd, int core)
 float mic_level(void)
 {
     return atomic_load(&level);
+}
+
+bool mic_record_start(void)
+{
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&recording_on, &expected, true))
+        return false;
+    xStreamBufferReset(recording);
+    return true;
+}
+
+size_t mic_record_read(int16_t *samples, size_t max, int timeout_ms)
+{
+    return xStreamBufferReceive(recording, samples, max * sizeof(int16_t), pdMS_TO_TICKS(timeout_ms)) / sizeof(int16_t);
+}
+
+void mic_record_stop(void)
+{
+    atomic_store(&recording_on, false);
 }
 
 void mic_beat(mic_beat_t *beat)

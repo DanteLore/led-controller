@@ -139,7 +139,7 @@ static void publish_state(const settings_t *s, bool draft, float speed, const mi
 {
     taskENTER_CRITICAL(&state_lock);
     state = (control_state_t){ s->mode, draft, s->brightness, speed, LED_COUNT,
-                               beat->bpm, beat->confidence, beat->holding };
+                               beat->bpm, beat->confidence, beat->holding, beat->energy };
     taskEXIT_CRITICAL(&state_lock);
 }
 
@@ -408,7 +408,7 @@ static void led_task(void *arg)
 
         bool full_scale = false;
         if (show.set) {
-            patch_render(show.set, show.index, ms, beat_milli, frame, LED_COUNT);
+            patch_render(show.set, show.index, ms, beat_milli, beat.energy, frame, LED_COUNT);
             int playing = patch_playlist_step(show.set, show.index, ms);
             if (playing >= 0 && playing != last_step) {
                 const patch_t *p = &show.set->patches[show.index];
@@ -451,7 +451,7 @@ static void led_task(void *arg)
             redraw_patch = redraw_brightness = redraw_speed = false;
             if (++frames % PREVIEW_EVERY == 0) {
                 screen_preview(frame, LED_COUNT);
-                screen_mic(mic_level(), beat.bpm, !beat.holding, !beat.holding && beat.position - floor(beat.position) < 0.15);
+                screen_mic(mic_level(), beat.bpm, !beat.holding, beat.coasting, !beat.holding && beat.position - floor(beat.position) < 0.15);
             }
         } else {
             frames++;

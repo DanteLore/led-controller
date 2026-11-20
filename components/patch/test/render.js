@@ -16,7 +16,7 @@ const frame = [];
 const out = [];
 for (let p = 0; p < set.count; p++)
     for (const t of TIMES_MS) {
-        Patch.render(set, p, t, t * 2, frame, count);   // beat clock at 120 BPM
+        Patch.render(set, p, t, t * 2, 0.75, frame, count);   // 120 BPM, energy 0.75
         for (let i = 0; i < count; i++)
             out.push(`${set.patches[p].name} ${t} ${i} ${frame[i].join(' ')}`);
     }

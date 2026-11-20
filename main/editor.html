@@ -493,7 +493,7 @@ function oscEditor(title, o) {
 
   return fieldset(title,
     field('Shape', shape),
-    field('Clock', clock, onBeat ? 'Follows the beat the mic hears: 1 = every beat, 4 = every bar' : null),
+    field('Clock', clock, onBeat ? 'Follows the beat the mic hears: 1 = every beat, 4 = every bar. In the glow, it pulses only as hard as the music hits, so it goes quiet in a breakdown' : null),
     field('Period', periodBox, '0 holds still'),
     el('div', { className: 'field' }, el('span'), randomPeriod),
     field('Phase', slider(o, 'phase', 0, 0, 1, 0.01), 'Start point, in cycles'),
@@ -975,14 +975,14 @@ function tick(now) {
     beatMilli += dt * previewBpm() / 60;
     const ms = Math.floor(previewMs);
     const beat = Math.floor(beatMilli);
-    Patch.render(set, selected, ms, beat, frame, ledCount);
+    Patch.render(set, selected, ms, beat, 1, frame, ledCount);   // full energy, so beat patches pulse while editing
     frame.length = ledCount;
     drawStrip($('strip'), frame, true);
     while (nextSample <= previewMs) {
       const sample = [];
       // History rows are sampled in effect time; their beat clock is worked back from it
       const behind = (previewMs - nextSample) / speedMultiplier();
-      Patch.render(set, selected, Math.floor(nextSample), Math.floor(beatMilli - behind * previewBpm() / 60), sample, ledCount);
+      Patch.render(set, selected, Math.floor(nextSample), Math.floor(beatMilli - behind * previewBpm() / 60), 1, sample, ledCount);
       addHistoryRow(sample);
       nextSample += HISTORY_SAMPLE_MS * speedMultiplier();
     }
@@ -996,7 +996,7 @@ function tick(now) {
       document.querySelectorAll('#cards canvas, .chip canvas').forEach(c => {
         const i = Number(c.dataset.index);
         const cardFrame = [];
-        Patch.render(set, i, Math.floor(now), beat, cardFrame, ledCount);
+        Patch.render(set, i, Math.floor(now), beat, 1, cardFrame, ledCount);
         drawStrip(c, cardFrame, false);
       });
     }

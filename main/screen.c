@@ -107,11 +107,12 @@ void screen_preview(const rgb16_t *frame, int count)
     st7789_draw_pixels(MARGIN_X, PREVIEW_Y, BAR_W, PREVIEW_H, buf);
 }
 
-void screen_mic(float level, float bpm, bool beat_found, bool on_beat)
+void screen_mic(float level, float bpm, bool beat_found, bool coasting, bool on_beat)
 {
     char text[8];
     if (beat_found) snprintf(text, sizeof(text), "%3.0f", bpm);
     else snprintf(text, sizeof(text), "---");
+    // Coasting through a breakdown is still following the beat, so it stays white
     st7789_draw_string(BPM_X, MIC_Y - 1, text, beat_found ? COLOR_WHITE : COLOR_GREY, COLOR_BLACK);
     st7789_fill_rect(BEAT_DOT_X, MIC_Y - 1, 8, 8, on_beat ? COLOR_YELLOW : RGB565(40, 40, 40));
     int filled = MIC_BAR_W * level;
@@ -166,7 +167,7 @@ void screen_patch(const char *name, bool web_draft) {}
 void screen_brightness(int percent) {}
 void screen_speed(float multiplier, float position) {}
 void screen_preview(const rgb16_t *frame, int count) {}
-void screen_mic(float level, float bpm, bool beat_found, bool on_beat) {}
+void screen_mic(float level, float bpm, bool beat_found, bool coasting, bool on_beat) {}
 void screen_text(const screen_line_t *lines, int count, const char *qr_text) {}
 
 #endif

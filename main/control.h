@@ -13,6 +13,7 @@ typedef struct {
     float bpm;          // from the beat tracker
     float beat_confidence;
     bool beat_holding;  // no clear beat right now
+    float beat_energy;  // how hard the music hits, 0–1
 } control_state_t;
 
 void control_select(int mode);

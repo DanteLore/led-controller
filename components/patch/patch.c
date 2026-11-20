@@ -117,14 +117,21 @@ static rgb16_t palette_colour(const patch_t *p, float pos)
     };
 }
 
-static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, rgb16_t *frame, int count)
+// A glow oscillator: on the beat clock, it pulses only as hard as the music hits
+static float glow_value(const patch_osc_t *o, int slot, int led, int count, uint32_t ms, uint32_t beat_milli, float energy)
+{
+    float v = osc_value(o, slot, led, count, ms, beat_milli);
+    return o->beat ? v * energy : v;
+}
+
+static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, float energy, rgb16_t *frame, int count)
 {
     for (int led = 0; led < count; led++) {
         float glow = 1, level = 1;
         if (p->has_glow) {
-            float mix = osc_value(&p->a, 0, led, count, ms, beat_milli);
+            float mix = glow_value(&p->a, 0, led, count, ms, beat_milli, energy);
             if (p->has_b) {
-                float b = osc_value(&p->b, 1, led, count, ms, beat_milli);
+                float b = glow_value(&p->b, 1, led, count, ms, beat_milli, energy);
                 mix = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
             }
             glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
@@ -162,16 +169,17 @@ static int find_step(const patch_t *p, uint32_t ms, uint32_t *step_ms)
     return i;
 }
 
-void patch_render(const patch_set_t *set, int index, uint32_t ms, uint32_t beat_milli, rgb16_t *frame, int count)
+void patch_render(const patch_set_t *set, int index, uint32_t ms, uint32_t beat_milli, float beat_energy,
+                  rgb16_t *frame, int count)
 {
     if (!tables_ready) make_tables();
     const patch_t *p = &set->patches[index];
     if (p->playlist_count) {
         uint32_t t;
         const patch_step_t *s = &p->playlist[find_step(p, ms, &t)];
-        render_patch(&set->patches[s->patch], step_time(s, t), beat_milli, frame, count);
+        render_patch(&set->patches[s->patch], step_time(s, t), beat_milli, beat_energy, frame, count);
     } else {
-        render_patch(p, ms, beat_milli, frame, count);
+        render_patch(p, ms, beat_milli, beat_energy, frame, count);
     }
 }
 

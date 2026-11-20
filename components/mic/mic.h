@@ -19,9 +19,20 @@ typedef struct {
     double position;    // beats; the fraction is the phase within the current beat
     float bpm;
     float confidence;   // 0–1
-    bool holding;       // no clear beat: the position waits at the end of a beat
+    bool holding;       // no beat for a while: the position waits at the end of a beat
+    bool coasting;      // beat unclear just now (a breakdown): running on at the locked tempo
+    float energy;       // 0–1: how hard the music hits now; patches pulse with this
 } mic_beat_t;
 
 // The beat clock now, carried forward from the last analysis and a little
 // ahead, so lights land on the beat rather than after it
 void mic_beat(mic_beat_t *beat);
+
+// Recording what the beat tracker hears (after the high-pass), as 16-bit
+// samples at MIC_SAMPLE_RATE, for tuning on a computer. Start, read until
+// done, stop. One recording at a time; mic_record_start returns false if busy.
+#include <stddef.h>
+#include <stdint.h>
+bool mic_record_start(void);
+size_t mic_record_read(int16_t *samples, size_t max, int timeout_ms);
+void mic_record_stop(void);

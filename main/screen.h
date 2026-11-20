@@ -26,7 +26,7 @@ void screen_patch(const char *name, bool web_draft);
 void screen_brightness(int percent);
 void screen_speed(float multiplier, float position);       // position 0–1 along the bar
 void screen_preview(const rgb16_t *frame, int count);
-void screen_mic(float level, float bpm, bool beat_found, bool on_beat);   // level 0–1: a bar under the preview, then BPM and a beat dot
+void screen_mic(float level, float bpm, bool beat_found, bool coasting, bool on_beat);   // level 0–1: a bar under the preview, then BPM (grey while coasting) and a beat dot
 
 // Lines of text down the left, and a QR code on the right if qr_text isn't NULL
 void screen_text(const screen_line_t *lines, int count, const char *qr_text);

@@ -109,13 +109,18 @@ function palette_colour(p, pos) {
     ];
 }
 
-function render_patch(p, ms, beat_milli, frame, count) {
+function glow_value(o, slot, led, count, ms, beat_milli, energy) {
+    const v = osc_value(o, slot, led, count, ms, beat_milli);
+    return o.beat ? v * energy : v;
+}
+
+function render_patch(p, ms, beat_milli, energy, frame, count) {
     for (let led = 0; led < count; led++) {
         let glow = 1, level = 1;
         if (p.has_glow) {
-            let mix = osc_value(p.a, 0, led, count, ms, beat_milli);
+            let mix = glow_value(p.a, 0, led, count, ms, beat_milli, energy);
             if (p.has_b) {
-                const b = osc_value(p.b, 1, led, count, ms, beat_milli);
+                const b = glow_value(p.b, 1, led, count, ms, beat_milli, energy);
                 mix = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;
             }
             glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
@@ -148,15 +153,15 @@ function find_step(p, ms) {
 }
 
 // Fills frame (an array) for a point in effect time, in ms, and on the beat
-// clock, in thousandths of a beat
-function render(set, index, ms, beat_milli, frame, count) {
+// clock, in thousandths of a beat; beat_energy (0–1) is how hard the music hits
+function render(set, index, ms, beat_milli, beat_energy, frame, count) {
     const p = set.patches[index];
     if (p.playlist_count) {
         const found = find_step(p, ms);
         const s = p.playlist[found.step];
-        render_patch(set.patches[s.patch], step_time(s, found.ms), beat_milli, frame, count);
+        render_patch(set.patches[s.patch], step_time(s, found.ms), beat_milli, beat_energy, frame, count);
     } else {
-        render_patch(p, ms, beat_milli, frame, count);
+        render_patch(p, ms, beat_milli, beat_energy, frame, count);
     }
 }
 

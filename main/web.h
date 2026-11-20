@@ -6,6 +6,7 @@
 //   GET  /api/presets    the built-in presets
 //   POST /api/draft?index=N   play patch N of an unsaved library; DELETE stops
 //   GET  /api/state      modes, mode playing, brightness   POST {"mode":N} or {"brightness":N}
+//   GET  /api/audio?secs=N   N seconds of what the mic hears, as a WAV file
 
 #include "esp_http_server.h"
 

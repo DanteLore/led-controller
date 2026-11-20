@@ -3,6 +3,7 @@
 #include "control.h"
 #include "effects.h"
 #include "wifi.h"
+#include "mic.h"
 #include "cJSON.h"
 #include "esp_log.h"
 #include <stdlib.h>
@@ -153,6 +154,7 @@ static esp_err_t state_get(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "bpm", s.bpm);
     cJSON_AddNumberToObject(root, "beat_confidence", s.beat_confidence);
     cJSON_AddBoolToObject(root, "beat_found", !s.beat_holding);
+    cJSON_AddNumberToObject(root, "beat_energy", s.beat_energy);
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!json)
@@ -180,6 +182,47 @@ static esp_err_t state_post(httpd_req_t *req)
     return ok ? httpd_resp_sendstr(req, "OK") : bad_request(req, "Expected {\"mode\":N} or {\"brightness\":N}");
 }
 
+// What the mic hears, as a WAV file, for tuning the beat tracker on a computer
+static esp_err_t audio_get(httpd_req_t *req)
+{
+    char query[32], value[8];
+    int secs = 10;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK
+        && httpd_query_key_value(query, "secs", value, sizeof(value)) == ESP_OK)
+        secs = atoi(value);
+    if (secs < 1 || secs > 120)
+        return bad_request(req, "secs should be from 1 to 120");
+    if (!mic_record_start())
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Already recording");
+
+    uint32_t samples = secs * MIC_SAMPLE_RATE, bytes = samples * 2;
+    uint8_t header[44];
+    memcpy(header, "RIFF", 4);
+    uint32_t fields[] = { 36 + bytes };
+    memcpy(header + 4, fields, 4);
+    memcpy(header + 8, "WAVEfmt ", 8);
+    uint32_t fmt[] = { 16, 1 | (1 << 16), MIC_SAMPLE_RATE, MIC_SAMPLE_RATE * 2, 2 | (16 << 16) };
+    memcpy(header + 16, fmt, sizeof(fmt));
+    memcpy(header + 36, "data", 4);
+    memcpy(header + 40, &bytes, 4);
+    httpd_resp_set_type(req, "audio/wav");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"mic.wav\"");
+    esp_err_t err = httpd_resp_send_chunk(req, (const char *)header, sizeof(header));
+
+    static int16_t chunk[1024];
+    uint32_t sent = 0;
+    while (err == ESP_OK && sent < samples) {
+        size_t want = samples - sent < 1024 ? samples - sent : 1024;
+        size_t got = mic_record_read(chunk, want, 1000);
+        if (!got) break;
+        err = httpd_resp_send_chunk(req, (const char *)chunk, got * 2);
+        sent += got;
+    }
+    mic_record_stop();
+    ESP_LOGI(TAG, "Recorded %lu samples", (unsigned long)sent);
+    return err == ESP_OK ? httpd_resp_send_chunk(req, NULL, 0) : err;
+}
+
 static void add(httpd_handle_t server, const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *))
 {
     httpd_uri_t route = { .uri = uri, .method = method, .handler = handler };
@@ -197,5 +240,6 @@ void web_start(httpd_handle_t server)
     add(server, "/api/draft",    HTTP_DELETE, draft_delete);
     add(server, "/api/state",    HTTP_GET,    state_get);
     add(server, "/api/state",    HTTP_POST,   state_post);
+    add(server, "/api/audio",    HTTP_GET,    audio_get);
     ESP_LOGI(TAG, "Patch editor ready");
 }
