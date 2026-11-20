@@ -297,6 +297,18 @@ bool patch_parse(const char *json, patch_set_t *set, char *error, size_t error_s
                 if (strcmp(set->patches[j].name, set->patches[i].name) == 0)
                     fail(&r, "two patches have this name");
         }
+        // "default": the patch to start on at boot
+        const cJSON *start = cJSON_GetObjectItemCaseSensitive(root, "default");
+        set->startup = 0;
+        r.where = "file";
+        if (!r.failed && start) {
+            if (!cJSON_IsString(start)) {
+                fail(&r, "default should be a patch name");
+            } else {
+                set->startup = find_patch(patches, start->valuestring);
+                if (set->startup < 0) fail(&r, "default is \"%s\", which isn't in the file", start->valuestring);
+            }
+        }
     }
     cJSON_Delete(root);
     return !r.failed;

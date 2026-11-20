@@ -677,10 +677,16 @@ function renderEditor() {
     p.name = name.value;
     // Playlists follow the rename
     for (const q of lib.patches) for (const s of q.playlist || []) if (s.patch === old) s.patch = p.name;
+    if (lib.default === old) lib.default = p.name;
     $('editor-title').textContent = 'Edit ' + p.name;
     changed(false);
   };
-  const general = fieldset('Name', field('Name', name, 'Shown on the device screen'));
+  const general = fieldset('Name', field('Name', name, 'Shown on the device screen'),
+    el('div', { className: 'field' }, el('span'),
+      checkbox('Start on this when the device boots', lib.default === p.name, on => {
+        if (on) lib.default = p.name; else delete lib.default;
+        changed(false);
+      })));
   const parts = [general];
   if (p.playlist) parts.push(playlistEditor(p));
   else parts.push(glowEditor(p), colourEditor(p));
@@ -736,6 +742,7 @@ $('delete').onclick = () => {
   const extra = users.length ? '\n\nIt will also be taken out of: ' + users.join(', ') : '';
   if (!confirm('Delete ' + p.name + '?' + extra)) return;
   for (const q of lib.patches) if (q.playlist) q.playlist = q.playlist.filter(s => s.patch !== p.name);
+  if (lib.default === p.name) delete lib.default;
   const next = neighbour(1) >= 0 ? neighbour(1) - 1 : neighbour(-1);
   lib.patches.splice(selected, 1);
   selected = next >= 0 ? next : Math.min(selected, lib.patches.length - 1);

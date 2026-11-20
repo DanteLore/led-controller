@@ -48,7 +48,6 @@
 #define FRAME_MS        5
 #define PREVIEW_EVERY   4   // LCD preview at 50fps; it takes ~3ms to draw
 
-#define STARTUP_MODE  0   // first patch in the library
 
 #define HOSTNAME  "led-controller"
 
@@ -294,7 +293,11 @@ static void led_task(void *arg)
     switch_init();
     led_strip_init(LED_PIN, LED_COUNT, LED_ORDER);
 
-    settings_t settings = { .mode = STARTUP_MODE, .brightness = BRIGHTNESS_DEFAULT };
+    // Start on the library's "default" patch, or its first
+    library_lock();
+    int startup = library_patches()->startup;
+    library_unlock();
+    settings_t settings = { .mode = startup, .brightness = BRIGHTNESS_DEFAULT };
 
     // Effect time advances by real time × the mode's speed, so changing speed
     // changes the rate of motion without making the effect jump

@@ -366,6 +366,14 @@ function parse(root) {
         if (set.patches.some(q => q.name === p.name)) r.fail('two patches have this name');
         set.patches.push(p);
     });
+    // "default": the patch to start on at boot
+    r.where = 'file';
+    set.startup = 0;
+    if (has(root, 'default')) {
+        if (typeof root.default !== 'string') r.fail('default should be a patch name');
+        set.startup = find_patch(patches, root.default);
+        if (set.startup < 0) r.fail('default is "' + root.default + '", which isn\'t in the file');
+    }
     return set;
 }
 

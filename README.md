@@ -144,7 +144,7 @@ To work on the pages without the board: `tools/editor_server.py`, then open `htt
 
 Older files may give a patch a `"knob"`; it's ignored now that each knob has one job.
 
-A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8KB. `main/presets.json` is the reference. Each LED's brightness ("glow") comes from one or two oscillators, shaped; its colour is a palette position, picked by the glow or by a colour oscillator. Anything left out takes the default.
+A patch file is JSON: `{"version": 1, "default": "Beat embers", "patches": [...]}`, up to 16 patches and 8KB. `"default"` names the patch the device starts on at boot (the first if left out); the editor sets it with the "Start on this when the device boots" box. `main/presets.json` is the reference. Each LED's brightness ("glow") comes from one or two oscillators, shaped; its colour is a palette position, picked by the glow or by a colour oscillator. Anything left out takes the default.
 
 ```json
 { "name": "Embers",                       // 1–16 characters, shown on the LCD

@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "default": "Beat embers",
   "patches": [
     {
       "name": "Demo",

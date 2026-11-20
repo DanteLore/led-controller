@@ -82,6 +82,7 @@ typedef struct {
 
 typedef struct {
     int count;
+    int startup;              // the patch to start on at boot: the file's "default", or the first
     patch_t patches[PATCH_MAX];
 } patch_set_t;
 
