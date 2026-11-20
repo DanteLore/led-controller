@@ -29,7 +29,6 @@ typedef struct { uint16_t r, g, b; } rgb16_t;
 #define PATCH_JSON_MAX   8192   // biggest patch file accepted
 
 typedef enum { SHAPE_SINE, SHAPE_TRIANGLE, SHAPE_SAW, SHAPE_SQUARE, SHAPE_NOISE } patch_shape_t;
-typedef enum { KNOB_SPEED, KNOB_BRIGHTNESS } knob_role_t;
 
 // Every oscillator gives 0–1. Sine, triangle and square start at 0 and peak
 // half way through; saw ramps 0 → 1; noise drifts between random values.
@@ -50,7 +49,6 @@ typedef struct {
 
 typedef struct {
     char name[PATCH_NAME_MAX + 1];
-    knob_role_t knob;
 
     // Glow: brightness of each LED, before the brightness setting
     bool has_glow;            // false = always full

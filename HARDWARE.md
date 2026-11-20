@@ -11,7 +11,7 @@
 | Part | Detail |
 |------|--------|
 | Controller | diymore ESP32-WROOM-32 with 1.9" ST7789V2 LCD (HW-463C DevKit V1 as a stand-in for now) |
-| Input | KY-040 rotary encoder with push button |
+| Input | Two KY-040 rotary encoders with push buttons, either side of the screen; a three-position mode switch |
 | Strip | 24V addressable strip offcut, Sunmoon **SM16703SP3** driver ICs (WS2811 protocol, 800kHz) |
 | Level shifter | **SN74AHCT125N** (DIP-14), 3.3V → 5V on the data line |
 | Power — strip | 24V PSU, direct to the strip |
@@ -27,7 +27,9 @@ Status as of 2026-11-17: level shifters, capacitors and buck converters on order
 |------|------|-----|--------|---------|
 | Controller | diymore ESP32 + 1.9" LCD | 1 | Have (from bt-mixer) — replacement screen on order | |
 | Stand-in controller | HW-463C ESP32 DevKit V1 | 1 | Have | Used until parts arrive |
-| Encoder | KY-040 | 1 | Have (from bt-mixer) | Brightness / mode |
+| Encoder | KY-040 | 2 | Have one (from bt-mixer); second to wire | Left: brightness, press for the previous patch. Right: speed, press for the next |
+| Mode switch | Three-position SPDT (on-off-on) | 1 | To wire | Setup / Play (middle) / Edit |
+| Microphone | INMP441 I2S MEMS module (3-pack) | 1 | Arrived 2026-11-20, to wire | Beat tracking |
 | Strip | 24V SM16703SP3 offcut | 1 | Have | Pads: 24V, DIN, GND |
 | Test strip | 10-LED piece cut from the offcut | 1 | Have | Bench testing |
 | Level shifter | SN74AHCT125N, DIP-14 (PENGLIN 10-pack) | 1 | Have — not used; first attempt garbled data and direct 3.3V works on the bench | Data line 3.3V → 5V |
@@ -82,6 +84,24 @@ Before first use:
 3. Then wire OUT+ → board VIN and OUT− → GND.
 
 **Don't power from USB and VIN at the same time.** Unplug the buck before plugging in USB to flash.
+
+### Controls (diymore LCD board)
+
+Header positions as on [pinout.pdf](pinout.pdf). The module's can reads ESP32-WROOM-32 (checked 2026-11-20), so GPIO16/17 are free; on a WROVER they'd belong to its PSRAM.
+
+| Part | Signal | GPIO | Header |
+|---|---|---|---|
+| Left knob (brightness) | CLK / DT / SW | 33 / 27 / 14 | T9 / T6 / T5 |
+| Right knob (speed) | CLK / DT / SW | 19 / 21 / 22 | B10 / B11 / B14 (B12–B13 between are USB serial) |
+| Both knobs | + / GND | 3.3V / GND | B1 / T2 and B2 |
+| Mode switch | A (Setup) / B (Edit) | 16 / 17 | B6 / B7 |
+| Mode switch | middle (common) | GND | B2 |
+| INMP441 mic | SCK / WS / SD | 26 / 25 / 35 | T7 / T8 / T11 |
+| INMP441 mic | VDD / GND / L/R | 3.3V / GND / GND | B1 / B2 / B2 |
+
+- The switch's middle position connects neither side, so it reads as Play, which is also what the board does with no switch fitted. Internal pull-ups on GPIO16/17; a side reads low when selected
+- Mic: L/R to GND selects the left I2S channel; it must not float. The sound hole goes through the board, so the labelled side faces the room: don't cover the hole. SD is an input to the ESP32, so input-only GPIO35 suits it. Still spare: GPIO5 (boot pin), 34, 36, 39 (input only)
+- 3.3V and GND each feed several parts; share them with a Wago or a strip of perfboard
 
 ### Power routing
 

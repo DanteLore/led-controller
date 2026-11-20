@@ -3,7 +3,6 @@
   "patches": [
     {
       "name": "Demo",
-      "knob": "brightness",
       "playlist": [
         { "patch": "Rainbow", "secs": 30, "speed": [0.5, 10] },
         { "patch": "Pulse",   "secs": 30 },
@@ -61,7 +60,6 @@
     },
     {
       "name": "Warm",
-      "knob": "brightness",
       "colour": { "palette": ["#FF8228"] }
     },
     {

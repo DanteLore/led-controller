@@ -2,7 +2,7 @@
 
 ## What this project is
 
-A standalone controller for an addressable LED strip, built on the diymore ESP32 board with its built-in 1.9" LCD and a KY-040 rotary encoder. It reuses the display and encoder components from [bt-mixer](https://github.com/DanteLore/bt-mixer).
+A standalone controller for an addressable LED strip, built on the diymore ESP32 board with its built-in 1.9" LCD between two KY-040 rotary encoders, plus a three-position mode switch. It reuses the display and encoder components from [bt-mixer](https://github.com/DanteLore/bt-mixer).
 
 The strip is a 24V offcut using Sunmoon SM16703SP3 driver ICs (WS2811 protocol).
 
@@ -25,6 +25,7 @@ led-controller/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
 │   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
+│   ├── mic/             ← INMP441 reader: I2S at 22.05kHz, 60Hz high-pass, level meter
 │   ├── qr/              ← minimal QR code encoder for the LCD (versions 2–3, byte mode)
 │   ├── patch/           ← patch engine: patch.c (render), patch_json.c (read), patch.js
 │   │                      (JavaScript copy for the editor), test/run.sh (checks they agree)
@@ -40,7 +41,10 @@ led-controller/
 See HARDWARE.md for full details.
 
 - **LCD (internal):** GPIO2 (DC), GPIO4 (RST), GPIO15 (CS), GPIO18 (SCLK), GPIO23 (MOSI), GPIO32 (BL)
-- **Rotary encoder:** GPIO33 (CLK), GPIO27 (DT), GPIO14 (SW)
+- **Left knob (brightness):** GPIO33 (CLK), GPIO27 (DT), GPIO14 (SW)
+- **Right knob (speed):** GPIO19 (CLK), GPIO21 (DT), GPIO22 (SW)
+- **Mode switch:** GPIO16 (A, Setup), GPIO17 (B, Edit), middle pin to GND; middle position is Play
+- **Microphone:** INMP441 on I2S: GPIO26 (SCK), GPIO25 (WS), GPIO35 (SD), L/R to GND (left channel)
 - **LED data:** GPIO13 → SN74AHCT125N (3.3V → 5V) → 330Ω → strip DIN
 - **Power:** 24V PSU straight to the strip; ESP32 from USB, or an LM2596 buck set to 5.0V into VIN (never both)
 - Parts list, and the reasoning behind each choice, is in HARDWARE.md
@@ -61,35 +65,40 @@ See HARDWARE.md for full details.
 
 Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). Direct 3.3V data (D13 → 330Ω → DIN) works: RGB TEST shows red, green, blue thirds, and everything runs at a steady 200fps. With the 74AHCT125 in circuit the first pixel flickered and the rest froze, so the shifter has been left out for now; direct 3.3V is the working setup. The KY-040 encoder is connected (CLK D33, DT D27, SW D14, + 3V3). `LED_ORDER` (BRG) is confirmed correct on this strip. The diymore LCD board is waiting on a replacement screen; the `lcd` build compiles but hasn't run on hardware.
 
-- **Button:** press (acted on when let go) for the next mode (each starts from its beginning): the patches in the library in order, then RGB TEST and DIM TEST. Hold for about a second for the QR screen. **Knob:** speed or brightness, as each patch says. `STARTUP_MODE` in `main.c` picks the first mode.
+- **Left knob:** brightness; press for the previous patch. **Right knob:** speed; press for the next patch. Patches come in library order, then RGB TEST and DIM TEST, and each starts from its beginning. `STARTUP_MODE` in `main.c` picks the first.
+- **Mode switch:** **Setup** (A) shows the address as a QR code, or while the setup hotspot is up a WiFi QR code that joins it. **Play** (middle) is the normal screen. **Edit** (B) is a placeholder for editing patches on the device (text only, no QR code, so it can't be mistaken for Setup). The strip keeps playing in all three
 
 Modes are patches (see **Patches** below), edited from a phone or laptop. The presets:
 
-| Patch | Knob | What it does |
-|---|---|---|
-| Demo | Brightness | Playlist: Rainbow speeding up from 0.5x to 10x, then Pulse, then Whites, 30s each. Step changes are logged |
-| Rainbow | Speed | Scrolling rainbow, one cycle per 5s at 1x |
-| Pulse | Speed | Warm white easing full → dark → full, 6s at 1x |
-| Embers | Speed | Each LED glows and fades on its own, deep orange when dim to gold when bright |
-| Candle | Speed | Fast flicker over a slow sway, orange to yellow (new, not yet seen on the strip) |
-| Ocean | Speed | Blues and teals with waves travelling both ways (new, not yet seen on the strip) |
-| Warm | Brightness | Steady warm white |
-| Whites | Speed | Whole strip easing warm white → cool white → warm over 30s |
-| Pattern | Speed | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
+| Patch | What it does |
+|---|---|
+| Demo | Playlist: Rainbow speeding up from 0.5x to 10x, then Pulse, then Whites, 30s each. Step changes are logged |
+| Rainbow | Scrolling rainbow, one cycle per 5s at 1x |
+| Pulse | Warm white easing full → dark → full, 6s at 1x |
+| Embers | Each LED glows and fades on its own, deep orange when dim to gold when bright |
+| Candle | Fast flicker over a slow sway, orange to yellow (new, not yet seen on the strip) |
+| Ocean | Blues and teals with waves travelling both ways (new, not yet seen on the strip) |
+| Warm | Steady warm white |
+| Whites | Whole strip easing warm white → cool white → warm over 30s |
+| Pattern | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
 
 Always after the patches, in C:
 
-| Mode | Knob | What it does |
-|---|---|---|
-| RGB TEST | Brightness | Red, green, blue thirds from the input end, to check `LED_ORDER` |
-| DIM TEST | Speed | Full white at full scale (ignores brightness): 5s static gradient, then 10s fade out and 10s fade in. Each phase is logged |
+| Mode | What it does |
+|---|---|
+| RGB TEST | Red, green, blue thirds from the input end, to check `LED_ORDER` |
+| DIM TEST | Full white at full scale (ignores brightness): 5s static gradient, then 10s fade out and 10s fade in. Each phase is logged |
 
 - **Brightness** is perceptual 0–100% (default 50%, roughly 22% PWM), shared by all modes
-- **Speed** is per mode, so each moving mode remembers its own. Knob steps are logarithmic: every 5 clicks doubles or halves it, from 1/8x to 8x, so each click feels the same size at any speed. Changing speed changes the rate of motion without the effect jumping, because effect time is accumulated as real time × speed
+- **Speed** is per mode, so each mode remembers its own. Knob steps are logarithmic: every 5 clicks doubles or halves it, from 1/8x to 8x, so each click feels the same size at any speed. Changing speed changes the rate of motion without the effect jumping, because effect time is accumulated as real time × speed
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
-- LCD shows the mode, whichever setting the knob controls (with a bar), and a live preview of the strip. The title line shows the board's address once joined, or WIFI SETUP while the hotspot is up
-- **QR screen:** a QR code with the editor's address, so a phone camera opens it. It comes up for 60s whenever the board joins a network, and on a long press; a short press closes it. While the setup hotspot is up it shows a WiFi QR code instead, which joins the hotspot so the setup page pops up
+- LCD (Play) shows the patch, brightness and speed (each with a bar), a live preview of the strip, and a MIC level bar. The title line shows the board's address once joined, or WIFI SETUP while the hotspot is up
+- **QR codes:** only in Setup, so Play's screen is never covered
 - Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`, `HOSTNAME`
+
+### Microphone
+
+The mic task runs on core 0 with WiFi, reading 256-sample blocks (about 12ms) at 22.05kHz through a 60Hz Butterworth high-pass, which removes the INMP441's slow offset drift and rumble. It logs both I2S slots' levels once a second; the mic answers in the first slot. Measured 2026-11-20 on the bench: a silent room reads about −70dBFS (the bottom of the MIC bar), speech −40dBFS to −30dBFS. The bench PSU's mains hum shows as small peaks at 100Hz and its multiples. Lit and dark strip measured the same, so LED current doesn't get into the mic wiring. One mic was killed by heat while moving its header; solder quickly, chip side, first time.
 
 ### Patch editor
 
@@ -110,11 +119,12 @@ To work on the pages without the board: `tools/editor_server.py`, then open `htt
 
 ## Patches
 
+Older files may give a patch a `"knob"`; it's ignored now that each knob has one job.
+
 A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8KB. `main/presets.json` is the reference. Each LED's brightness ("glow") comes from one or two oscillators, shaped; its colour is a palette position, picked by the glow or by a colour oscillator. Anything left out takes the default.
 
 ```json
 { "name": "Embers",                       // 1–16 characters, shown on the LCD
-  "knob": "speed",                        // or "brightness"
   "glow": {                               // leave out for always full
     "a": { "shape": "sine", "period": [3, 9], "scatter": 1 },
     "b": { "shape": "sine", "period": [3, 9], "scatter": 1 },
@@ -132,7 +142,7 @@ A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8
 - **Oscillator:** `shape` sine | triangle | saw | square | noise (default sine), `period` seconds (default 1; 0 holds still; `[shortest, longest]` gives each LED its own), `phase` start point in cycles, `spread` cycles across the strip (the wave travels; minus goes the other way), `scatter` 0–1 random start point per LED. All give 0–1: sine, triangle and square start at 0 and peak half way; saw ramps up; noise eases between random values once per period
 - **Glow:** a, or a and b blended or multiplied, raised to `power` (above 1 lingers dim), then scaled to `floor`…`ceiling`. That is the LED's brightness
 - **Colour:** with `"source": "glow"` the shaped glow (before floor and ceiling) picks the palette position, so dim LEDs get the first colour. Smooth blends happen in linear light so mixes stay equal-power
-- **Playlist:** `{"name": "Demo", "playlist": [{"patch": "Rainbow", "secs": 30, "speed": [0.5, 10]}, ...]}` plays other patches in turn; `speed` is a number or `[start, end]` for a ramp. Knob defaults to brightness. Playlists can't play playlists
+- **Playlist:** `{"name": "Demo", "playlist": [{"patch": "Rainbow", "secs": 30, "speed": [0.5, 10]}, ...]}` plays other patches in turn; `speed` is a number or `[start, end]` for a ramp. Playlists can't play playlists
 - "Random" values come from hashing the LED's position, so they're fixed per LED and nothing is stored: the whole patch is a function of time, like the old effects
 - The engine is C in `components/patch/` (no ESP-IDF calls apart from cJSON) and `patch.js` is a line-for-line JavaScript copy for the editor's preview. After changing either, run `components/patch/test/run.sh`: it builds the C on the Mac, renders the presets with both and checks they agree, and checks both reject the files in `test/bad/` with the same message
 - Effect time is a 32-bit ms count, so a patch jumps once every 49 days (6 days at 8x)
@@ -167,7 +177,7 @@ A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8
 - `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE`: the app is ~840KB with WiFi, past the default 1MB partition's comfort zone; the large table gives 1.5MB
 
 ### Main loop
-- Single loop at 200fps in the LED task (`vTaskDelayUntil`, 5ms): read encoder → render effect → apply brightness → push to strip; LCD preview every 4th frame
+- Single loop at 200fps in the LED task (`vTaskDelayUntil`, 5ms): read knobs and switch → render patch → apply brightness → push to strip; LCD preview every 4th frame
 - Patches are pure functions of effect time (ms), so motion speed doesn't depend on frame rate, and speed control lives entirely in the main loop
 - Patches render 16-bit perceptual RGB into `frame[]`; the LCD preview reads the same buffer before brightness is applied
 - The library is read once into structs (`patch_set_t`); the render loop never touches JSON. The web server parses into a spare copy and swaps it in under the library's mutex, which the LED task holds while it renders. Mode changes and brightness from the page go through a queue to the LED task, which owns the settings

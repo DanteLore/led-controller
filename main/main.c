@@ -5,28 +5,43 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
-#include "st7789.h"
 #include "encoder.h"
 #include "led_strip.h"
+#include "mic.h"
 #include "effects.h"
 #include "library.h"
 #include "control.h"
+#include "screen.h"
 #include "web.h"
 #include "wifi.h"
-#include "qr.h"
 
 // Strip — count chips, not LEDs (24V strips usually have 6 LEDs per chip)
 #define LED_PIN     13
 #define LED_COUNT   10
 #define LED_ORDER   LED_ORDER_BRG
 
-#define ENC_PIN_CLK 33
-#define ENC_PIN_DT  27
-#define ENC_PIN_SW  14
+// Left knob: brightness; press for the previous patch
+#define LEFT_PIN_CLK   33
+#define LEFT_PIN_DT    27
+#define LEFT_PIN_SW    14
+// Right knob: speed; press for the next patch
+#define RIGHT_PIN_CLK  19
+#define RIGHT_PIN_DT   21
+#define RIGHT_PIN_SW   22
+
+// Three-position switch, common to GND. Neither side connected (the middle) is play.
+#define SWITCH_PIN_SETUP  16   // position A
+#define SWITCH_PIN_EDIT   17   // position B
+
+// INMP441 microphone, L/R tied to GND
+#define MIC_PIN_SCK  26
+#define MIC_PIN_WS   25
+#define MIC_PIN_SD   35
+#define MIC_CORE      0   // with WiFi; core 1 is kept for the LEDs
 
 // 200fps keeps temporal dithering fast enough not to flicker at dim levels.
 // Each pixel takes 30µs on the wire, so this holds up to ~150 pixels.
@@ -52,31 +67,9 @@
 #define SPEED_STEPS_PER_DOUBLING  5
 #define SPEED_STEPS_MAX          15   // ±15 steps = 1/8x to 8x
 
-#define BUTTON_DEBOUNCE_US   30000   // the contacts must settle this long before a change counts
-#define LONG_PRESS_US       800000   // holding the button this long shows the link screen
-#define LINK_SHOW_US      60000000   // how long the link screen stays up on its own
+#define DEBOUNCE_US          30000   // buttons and switch must settle this long before a change counts
 #define WIFI_CHECK_US       500000
 #define HEARTBEAT_US       5000000
-
-// Screen layout (landscape 320x170, 8x8 font)
-#define MARGIN_X      20
-#define TITLE_Y        8
-#define MODE_Y        32
-#define MODE_W        (PATCH_NAME_MAX * 8)
-#define KNOB_TEXT_Y   56
-#define KNOB_BAR_Y    72
-#define BAR_W        280
-#define BAR_H          8
-#define PREVIEW_Y    100
-#define PREVIEW_H     24
-#define HINT_Y       152
-#define NETWORK_X    140   // right half of the title line
-#define NETWORK_CHARS 20
-#define QR_SCALE       4   // pixels per module: 37 modules × 4 fits the 170-pixel height
-#define QR_QUIET       4   // light modules round the code, which scanners need
-#define LINK_LINE_H   14
-
-#define COLOR_GREY    RGB565(110, 110, 110)
 
 static const char *TAG = "led-controller";
 
@@ -88,7 +81,7 @@ static rgb16_t frame[LED_COUNT];
 typedef struct {
     int mode;
     int brightness;                     // shared by all modes
-    int speed_steps[MODE_MAX];          // each moving mode remembers its own speed
+    int speed_steps[MODE_MAX];          // each mode remembers its own speed
 } settings_t;
 
 // What the LED task is showing this frame. Read and written with the library locked.
@@ -96,7 +89,6 @@ typedef struct {
     const patch_set_t *set;   // NULL for a test
     int index;                // patch in set, or test
     const char *name;
-    knob_role_t knob;
 } showing_t;
 
 static showing_t what_to_show(const settings_t *s)
@@ -104,12 +96,10 @@ static showing_t what_to_show(const settings_t *s)
     const patch_set_t *draft = library_draft();
     const patch_set_t *set = draft ? draft : library_patches();
     int index = draft ? library_draft_index() : s->mode;
-    if (index < set->count) {
-        const patch_t *p = &set->patches[index];
-        return (showing_t){ set, index, p->name, p->knob };
-    }
+    if (index < set->count)
+        return (showing_t){ set, index, set->patches[index].name };
     test_t test = index - set->count;
-    return (showing_t){ NULL, test, effects_test_name(test), effects_test_knob(test) };
+    return (showing_t){ NULL, test, effects_test_name(test) };
 }
 
 static int mode_count(void)
@@ -152,6 +142,8 @@ static void publish_state(const settings_t *s, bool draft, float speed)
     taskEXIT_CRITICAL(&state_lock);
 }
 
+// ---- Output -----------------------------------------------------------------
+
 static float speed_multiplier(int steps)
 {
     return powf(2.0f, (float)steps / SPEED_STEPS_PER_DOUBLING);
@@ -166,222 +158,129 @@ static void show_frame(uint16_t level)
     led_strip_show();
 }
 
-// ---- Display --------------------------------------------------------------
-
-#if CONFIG_LED_CONTROLLER_LCD
-
-static const bool has_screen = true;
-
-static void display_init(void)
+static void draw_speed(int steps)
 {
-    st7789_init();
+    screen_speed(speed_multiplier(steps), (float)(steps + SPEED_STEPS_MAX) / (2 * SPEED_STEPS_MAX));
 }
 
-static void draw_static_labels(void)
-{
-    st7789_fill(COLOR_BLACK);
-    st7789_draw_string(MARGIN_X, TITLE_Y, "LED CONTROLLER", COLOR_CYAN, COLOR_BLACK);
-    st7789_draw_string(MARGIN_X, MODE_Y, "MODE", COLOR_GREY, COLOR_BLACK);
-    st7789_draw_string(MARGIN_X, HINT_Y, "TURN: ADJUST  PRESS: NEXT  HOLD: QR", COLOR_GREY, COLOR_BLACK);
-}
-
-// The board's address, or how WiFi is getting on, at the right of the title line
-static void draw_network(const char *text, uint16_t colour)
-{
-    char padded[NETWORK_CHARS + 1];
-    snprintf(padded, sizeof(padded), "%*s", NETWORK_CHARS, text);
-    st7789_draw_string(NETWORK_X, TITLE_Y, padded, colour, COLOR_BLACK);
-}
-
-static void draw_qr(const char *text)
-{
-    static bool modules[QR_SIZE_MAX][QR_SIZE_MAX];
-    static uint16_t row[(QR_SIZE_MAX + 2 * QR_QUIET) * QR_SCALE * QR_SCALE];
-    int n = qr_encode(text, modules);
-    if (!n) return;
-    int width = (n + 2 * QR_QUIET) * QR_SCALE;
-    int x0 = ST7789_WIDTH - width - 12, y0 = (ST7789_HEIGHT - width) / 2;
-    // A strip of QR_SCALE pixel rows per module row, quiet zone included
-    for (int my = -QR_QUIET; my < n + QR_QUIET; my++) {
-        for (int mx = -QR_QUIET; mx < n + QR_QUIET; mx++) {
-            bool on = mx >= 0 && mx < n && my >= 0 && my < n && modules[my][mx];
-            for (int py = 0; py < QR_SCALE; py++)
-                for (int px = 0; px < QR_SCALE; px++)
-                    row[py * width + (mx + QR_QUIET) * QR_SCALE + px] = on ? COLOR_BLACK : COLOR_WHITE;
-        }
-        st7789_draw_pixels(x0, y0 + (my + QR_QUIET) * QR_SCALE, width, QR_SCALE, row);
-    }
-}
-
-// Lines of text on the left, the QR code on the right
-static void draw_link_screen(const char *qr_text, const char *const *lines, int count)
-{
-    st7789_fill(COLOR_BLACK);
-    int y = (ST7789_HEIGHT - count * LINK_LINE_H) / 2;
-    for (int i = 0; i < count; i++, y += LINK_LINE_H)
-        st7789_draw_string(16, y, lines[i], i < 2 ? COLOR_CYAN : i == count - 1 ? COLOR_GREY : COLOR_WHITE, COLOR_BLACK);
-    draw_qr(qr_text);
-}
-
-// Padded so a shorter name overwrites a longer one. EDIT while the web editor's draft plays.
-static void draw_mode(const char *name, bool draft)
-{
-    char padded[PATCH_NAME_MAX + 1];
-    snprintf(padded, sizeof(padded), "%-*s", PATCH_NAME_MAX, name);
-    st7789_draw_string(MARGIN_X, MODE_Y, draft ? "EDIT" : "MODE", draft ? COLOR_YELLOW : COLOR_GREY, COLOR_BLACK);
-    st7789_draw_string(MARGIN_X + 96, MODE_Y, padded, COLOR_WHITE, COLOR_BLACK);
-}
-
-static void draw_bar(int filled)
-{
-    if (filled > 0)
-        st7789_fill_rect(MARGIN_X, KNOB_BAR_Y, filled, BAR_H, COLOR_YELLOW);
-    if (filled < BAR_W)
-        st7789_fill_rect(MARGIN_X + filled, KNOB_BAR_Y, BAR_W - filled, BAR_H, COLOR_GREY);
-}
-
-// Shows whichever setting the knob controls in the current mode
-static void draw_knob(const settings_t *s, knob_role_t knob, int slot)
-{
-    char text[12];
-    if (knob == KNOB_SPEED) {
-        int steps = s->speed_steps[slot];
-        snprintf(text, sizeof(text), "%5.2fx", speed_multiplier(steps));
-        st7789_draw_string(MARGIN_X, KNOB_TEXT_Y, "SPEED     ", COLOR_GREY, COLOR_BLACK);
-        st7789_draw_string(MARGIN_X + 96, KNOB_TEXT_Y, text, COLOR_WHITE, COLOR_BLACK);
-        draw_bar(BAR_W * (steps + SPEED_STEPS_MAX) / (2 * SPEED_STEPS_MAX));
-    } else {
-        snprintf(text, sizeof(text), "%5d%%", s->brightness);
-        st7789_draw_string(MARGIN_X, KNOB_TEXT_Y, "BRIGHTNESS", COLOR_GREY, COLOR_BLACK);
-        st7789_draw_string(MARGIN_X + 96, KNOB_TEXT_Y, text, COLOR_WHITE, COLOR_BLACK);
-        draw_bar(BAR_W * s->brightness / BRIGHTNESS_MAX);
-    }
-}
-
-// Effect colours before brightness, so the preview stays readable when dim
-static void draw_preview(void)
-{
-    static uint16_t buf[BAR_W * PREVIEW_H];
-    for (int x = 0; x < BAR_W; x++) {
-        rgb16_t c = frame[x * LED_COUNT / BAR_W];
-        uint16_t colour = RGB565(c.r >> 8, c.g >> 8, c.b >> 8);
-        uint16_t swapped = (colour >> 8) | (colour << 8);
-        for (int y = 0; y < PREVIEW_H; y++)
-            buf[y * BAR_W + x] = swapped;
-    }
-    st7789_draw_pixels(MARGIN_X, PREVIEW_Y, BAR_W, PREVIEW_H, buf);
-}
-
-#else
-
-static const bool has_screen = false;
-
-static void display_init(void) {}
-static void draw_static_labels(void) {}
-static void draw_network(const char *text, uint16_t colour) {}
-static void draw_link_screen(const char *qr_text, const char *const *lines, int count) {}
-static void draw_mode(const char *name, bool draft) {}
-static void draw_knob(const settings_t *s, knob_role_t knob, int slot) {}
-static void draw_preview(void) {}
-
-#endif
-
-// ---- Input ----------------------------------------------------------------
-
-typedef enum { PRESS_NONE, PRESS_SHORT, PRESS_LONG } press_t;
-
-// A short press counts when it's let go; a long one as soon as it's been held
-// long enough. A change only counts once the contacts have settled.
-static press_t button_press(int64_t now)
-{
-    static bool raw_was, held, long_sent;
-    static int64_t raw_since, down_us;
-    bool raw = encoder_button_pressed();
-    if (raw != raw_was) {
-        raw_was = raw;
-        raw_since = now;
-    }
-    if (raw != held && now - raw_since >= BUTTON_DEBOUNCE_US) {
-        held = raw;
-        if (held) {
-            down_us = now;
-            long_sent = false;
-        } else if (!long_sent) {
-            return PRESS_SHORT;
-        }
-    }
-    if (held && !long_sent && now - down_us >= LONG_PRESS_US) {
-        long_sent = true;
-        return PRESS_LONG;
-    }
-    return PRESS_NONE;
-}
+// ---- Input ------------------------------------------------------------------
 
 static int clamp(int v, int lo, int hi)
 {
     return v < lo ? lo : v > hi ? hi : v;
 }
 
-// ---- Main -----------------------------------------------------------------
+// A raw on/off input that only changes once it has held steady for DEBOUNCE_US
+typedef struct {
+    bool raw, settled;
+    int64_t raw_since;
+} debounced_t;
 
-static void adjust_knob(settings_t *s, knob_role_t knob, int slot, int delta)
+// Returns true when the settled value changes
+static bool debounce(debounced_t *d, bool raw, int64_t now)
 {
-    if (knob == KNOB_SPEED) {
-        int *steps = &s->speed_steps[slot];
-        *steps = clamp(*steps + delta, -SPEED_STEPS_MAX, SPEED_STEPS_MAX);
-        ESP_LOGI(TAG, "Speed %.2fx", speed_multiplier(*steps));
-    } else {
-        s->brightness = clamp(s->brightness + delta, 0, BRIGHTNESS_MAX);
-        ESP_LOGI(TAG, "Brightness %d%%", s->brightness);
+    if (raw != d->raw) {
+        d->raw = raw;
+        d->raw_since = now;
     }
+    if (raw == d->settled || now - d->raw_since < DEBOUNCE_US)
+        return false;
+    d->settled = raw;
+    return true;
 }
 
-// ---- Network on the screen --------------------------------------------------
+static bool pressed(debounced_t *d, encoder_t *knob, int64_t now)
+{
+    return debounce(d, encoder_button_pressed(knob), now) && d->settled;
+}
 
-// What the link screen offers: the editor's address once joined, or the setup
-// hotspot to join while it's up. Empty while still joining.
+typedef enum { PANEL_PLAY, PANEL_SETUP, PANEL_EDIT } panel_t;
+static const char *const PANEL_NAMES[] = { "Play", "Setup", "Edit" };
+
+static void switch_init(void)
+{
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << SWITCH_PIN_SETUP) | (1ULL << SWITCH_PIN_EDIT),
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&io);
+}
+
+static panel_t switch_raw(void)
+{
+    return gpio_get_level(SWITCH_PIN_SETUP) == 0 ? PANEL_SETUP
+         : gpio_get_level(SWITCH_PIN_EDIT) == 0  ? PANEL_EDIT
+         :                                         PANEL_PLAY;
+}
+
+// ---- Network ----------------------------------------------------------------
+
+// The address once joined, or the setup hotspot to join while it's up
 typedef struct {
-    char key[64];          // changes whenever there's something new to show
-    char title[NETWORK_CHARS + 1];
-    uint16_t title_colour;
+    wifi_status_t wifi;
+    char qr[64];   // what the QR code holds; empty while still joining
 } network_t;
 
-static void read_network(network_t *n, wifi_status_t *s)
+static void read_network(network_t *n)
 {
-    wifi_get_status(s);
-    if (s->state == WIFI_CONNECTED) {
-        snprintf(n->key, sizeof(n->key), "http://%s/", s->ip);
-        strlcpy(n->title, s->ip, sizeof(n->title));
-        n->title_colour = COLOR_WHITE;
-    } else if (s->hotspot) {
+    wifi_get_status(&n->wifi);
+    if (n->wifi.state == WIFI_CONNECTED)
+        snprintf(n->qr, sizeof(n->qr), "http://%s/", n->wifi.ip);
+    else if (n->wifi.hotspot)
         // Phone cameras offer to join a network from a code like this. Our
         // hotspot's name has none of the characters that would need escaping.
-        snprintf(n->key, sizeof(n->key), "WIFI:T:nopass;S:%s;;", s->hotspot_ssid);
-        strlcpy(n->title, "WIFI SETUP", sizeof(n->title));
-        n->title_colour = COLOR_YELLOW;
-    } else {
-        n->key[0] = 0;
-        strlcpy(n->title, "JOINING WIFI", sizeof(n->title));
-        n->title_colour = COLOR_GREY;
-    }
+        snprintf(n->qr, sizeof(n->qr), "WIFI:T:nopass;S:%s;;", n->wifi.hotspot_ssid);
+    else
+        n->qr[0] = 0;
 }
 
-static void show_link_screen(const network_t *n, const wifi_status_t *s)
+static void draw_network(const network_t *n)
 {
-    if (s->state == WIFI_CONNECTED) {
-        const char *lines[] = { "SCAN TO OPEN", "THE EDITOR", "", "OR BROWSE TO", s->ip, "", "PRESS TO CLOSE" };
-        draw_link_screen(n->key, lines, sizeof(lines) / sizeof(lines[0]));
-    } else {
-        const char *lines[] = { "SCAN TO JOIN", "THE SETUP WIFI", "", "OR JOIN", s->hotspot_ssid,
-                                "AND THE SETUP", "PAGE POPS UP", "", "PRESS TO CLOSE" };
-        draw_link_screen(n->key, lines, sizeof(lines) / sizeof(lines[0]));
-    }
+    if (n->wifi.state == WIFI_CONNECTED)
+        screen_network(n->wifi.ip, true, false);
+    else if (n->wifi.hotspot)
+        screen_network("WIFI SETUP", false, true);
+    else
+        screen_network("JOINING WIFI", false, false);
 }
+
+#define LINES(...) (screen_line_t[]){ __VA_ARGS__ }, sizeof((screen_line_t[]){ __VA_ARGS__ }) / sizeof(screen_line_t)
+
+static void draw_setup(const network_t *n)
+{
+    const wifi_status_t *w = &n->wifi;
+    if (w->state == WIFI_CONNECTED)
+        screen_text(LINES({ "SETUP", TEXT_HEADING }, { "", 0 }, { "SCAN TO OPEN", TEXT_NORMAL }, { "THE EDITOR", TEXT_NORMAL },
+                          { "", 0 }, { "OR BROWSE TO", TEXT_DIM }, { w->ip, TEXT_NORMAL }, { "", 0 },
+                          { "WIFI", TEXT_DIM }, { w->ssid, TEXT_NORMAL }), n->qr);
+    else if (w->hotspot)
+        screen_text(LINES({ "SETUP", TEXT_HEADING }, { "", 0 }, { "SCAN TO JOIN", TEXT_NORMAL }, { "THE SETUP WIFI", TEXT_NORMAL },
+                          { "", 0 }, { "OR JOIN", TEXT_DIM }, { w->hotspot_ssid, TEXT_NORMAL },
+                          { "AND THE SETUP", TEXT_DIM }, { "PAGE POPS UP", TEXT_DIM }), n->qr);
+    else
+        screen_text(LINES({ "SETUP", TEXT_HEADING }, { "", 0 }, { "JOINING WIFI", TEXT_NORMAL }, { w->ssid, TEXT_NORMAL }), NULL);
+}
+
+// A placeholder until patches can be edited on the device. No QR code, so
+// it can't be mistaken for Setup.
+static void draw_edit(const network_t *n)
+{
+    screen_text(LINES({ "EDIT MODE", TEXT_HEADING }, { "", 0 }, { "COMING SOON.", TEXT_NORMAL }, { "", 0 },
+                      { "FOR NOW, EDIT IN", TEXT_NORMAL }, { "THE WEB EDITOR:", TEXT_NORMAL },
+                      { "SETUP SHOWS WHERE", TEXT_DIM }), NULL);
+}
+
+// ---- Main -------------------------------------------------------------------
+
+typedef enum { SCREEN_NONE, SCREEN_PLAY, SCREEN_SETUP, SCREEN_EDIT } screen_t;
 
 static void led_task(void *arg)
 {
-    display_init();
-    encoder_init(ENC_PIN_CLK, ENC_PIN_DT, ENC_PIN_SW);
+    screen_init();
+    encoder_t *left = encoder_init(LEFT_PIN_CLK, LEFT_PIN_DT, LEFT_PIN_SW);
+    encoder_t *right = encoder_init(RIGHT_PIN_CLK, RIGHT_PIN_DT, RIGHT_PIN_SW);
+    switch_init();
     led_strip_init(LED_PIN, LED_COUNT, LED_ORDER);
 
     settings_t settings = { .mode = STARTUP_MODE, .brightness = BRIGHTNESS_DEFAULT };
@@ -391,7 +290,7 @@ static void led_task(void *arg)
     int64_t effect_us = 0;
     int64_t last_frame_us = esp_timer_get_time();
 
-    // What was on last frame, to spot changes from the button or the web
+    // What was on last frame, to spot changes from the knobs, switch or web
     uint32_t last_version = library_version();
     bool was_draft = false;
     int last_slot = -1;
@@ -399,74 +298,59 @@ static void led_task(void *arg)
     const void *last_phase = NULL;
     int last_step = -1;
 
+    debounced_t left_button = {0}, right_button = {0};
+    debounced_t switch_setup = {0}, switch_edit = {0};
+    panel_t panel = PANEL_PLAY;
+    network_t network = {0};
+    screen_t drawn = SCREEN_NONE;
+    int64_t next_wifi_check = 0;
+    bool redraw_patch = true, redraw_brightness = true, redraw_speed = true;
+
     uint32_t frames = 0, frames_at_heartbeat = 0;
     int64_t next_heartbeat_us = esp_timer_get_time() + HEARTBEAT_US;
-
-    // The link screen covers the usual display: the address or hotspot as a QR
-    // code. It comes up on its own when there's something new, and on a long press.
-    network_t network = { .key = "" };
-    wifi_status_t wifi;
-    bool link_open = false, redraw = false;
-    int64_t link_until = 0, next_wifi_check = 0;
-
-    draw_static_labels();
 
     TickType_t last_wake = xTaskGetTickCount();
     while (1) {
         int64_t now = esp_timer_get_time();
-        int delta = encoder_get_delta();
-        press_t press = button_press(now);
 
-        bool open_link = false, close_link = false;
+        // ---- Inputs
+        int brightness_delta = encoder_get_delta(left);
+        int speed_delta = encoder_get_delta(right);
+        int step = pressed(&right_button, right, now) - pressed(&left_button, left, now);
+
+        bool switch_moved = debounce(&switch_setup, switch_raw() == PANEL_SETUP, now);
+        switch_moved |= debounce(&switch_edit, switch_raw() == PANEL_EDIT, now);
+        if (switch_moved) {
+            panel = switch_setup.settled ? PANEL_SETUP : switch_edit.settled ? PANEL_EDIT : PANEL_PLAY;
+            ESP_LOGI(TAG, "Switch: %s", PANEL_NAMES[panel]);
+        }
+
+        bool network_changed = false;
         if (now >= next_wifi_check) {
             next_wifi_check = now + WIFI_CHECK_US;
-            char was[sizeof(network.key)];
-            strlcpy(was, network.key, sizeof(was));
-            read_network(&network, &wifi);
-            if (strcmp(was, network.key) != 0) {
-                if (!link_open) draw_network(network.title, network.title_colour);
-                open_link = network.key[0] != 0;
-                close_link = !open_link;
-            }
+            char was[sizeof(network.qr)];
+            strlcpy(was, network.qr, sizeof(was));
+            read_network(&network);
+            network_changed = strcmp(was, network.qr) != 0;
         }
-        if (press == PRESS_LONG && link_open)
-            close_link = true;
-        else if (press == PRESS_LONG)
-            open_link = true;
-        if (press == PRESS_SHORT && link_open)
-            close_link = true;
-        if (link_open && now >= link_until)
-            close_link = true;
-        if (open_link && network.key[0] && has_screen) {
-            show_link_screen(&network, &wifi);
-            link_open = true;
-            link_until = now + LINK_SHOW_US;
-        } else if (close_link && link_open) {
-            link_open = false;
-            draw_static_labels();
-            draw_network(network.title, network.title_colour);
-            redraw = true;
-        }
-        bool next_mode = press == PRESS_SHORT && !close_link;
 
-        // The button leaves the editor's draft for the saved version of the
-        // same patch; otherwise it moves on to the next mode
+        // ---- Which patch. A press leaves the web editor's draft for the
+        // saved version of the same patch; otherwise it steps through the modes.
         library_lock();
         bool draft = library_draft() != NULL;
-        if (next_mode && draft)
+        if (step && draft)
             settings.mode = library_draft_index();
-        else if (next_mode)
-            settings.mode = (settings.mode + 1) % mode_count();
+        else if (step)
+            settings.mode = (settings.mode + step + mode_count()) % mode_count();
         library_unlock();
-        if (next_mode && draft)
+        if (step && draft)
             library_stop_draft();
 
-        bool redraw_knob = false;
         command_t command;
         while (xQueueReceive(commands, &command, 0)) {
             if (command.type == COMMAND_BRIGHTNESS) {
                 settings.brightness = clamp(command.value, 0, BRIGHTNESS_MAX);
-                redraw_knob = true;
+                redraw_brightness = true;
             } else {
                 settings.mode = command.value;
                 library_stop_draft();
@@ -487,30 +371,32 @@ static void led_task(void *arg)
 
         // A different mode starts from its beginning; edits to the same draft
         // patch carry on from where they are, so changes can be seen smoothly
-        bool changed = slot != last_slot || draft != was_draft || strcmp(show.name, last_name) != 0;
-        if (changed) {
+        if (slot != last_slot || draft != was_draft || strcmp(show.name, last_name) != 0) {
             if (slot != last_slot || draft != was_draft)
                 effect_us = 0;
-            ESP_LOGI(TAG, "%s %s", draft ? "Editing" : "Mode", show.name);
-            redraw = true;
+            ESP_LOGI(TAG, "%s %s", draft ? "Web draft" : "Patch", show.name);
             strlcpy(last_name, show.name, sizeof(last_name));
             last_slot = slot;
             was_draft = draft;
             last_phase = NULL;
             last_step = -1;
+            redraw_patch = redraw_speed = true;
         }
 
-        if (delta != 0)
-            adjust_knob(&settings, show.knob, slot, delta);
-        if (redraw && !link_open) {
-            draw_mode(show.name, draft);
-            redraw = false;
-            redraw_knob = true;
+        if (brightness_delta) {
+            settings.brightness = clamp(settings.brightness + brightness_delta, 0, BRIGHTNESS_MAX);
+            ESP_LOGI(TAG, "Brightness %d%%", settings.brightness);
+            redraw_brightness = true;
         }
-        if ((delta != 0 || redraw_knob) && !link_open)
-            draw_knob(&settings, show.knob, slot);
+        if (speed_delta) {
+            int *steps = &settings.speed_steps[slot];
+            *steps = clamp(*steps + speed_delta, -SPEED_STEPS_MAX, SPEED_STEPS_MAX);
+            ESP_LOGI(TAG, "Speed %.2fx", speed_multiplier(*steps));
+            redraw_speed = true;
+        }
 
-        float speed = show.knob == KNOB_SPEED ? speed_multiplier(settings.speed_steps[slot]) : 1.0f;
+        // ---- Render
+        float speed = speed_multiplier(settings.speed_steps[slot]);
         effect_us += (int64_t)((now - last_frame_us) * speed);
         last_frame_us = now;
         uint32_t ms = effect_us / 1000;
@@ -518,12 +404,12 @@ static void led_task(void *arg)
         bool full_scale = false;
         if (show.set) {
             patch_render(show.set, show.index, ms, frame, LED_COUNT);
-            int step = patch_playlist_step(show.set, show.index, ms);
-            if (step >= 0 && step != last_step) {
+            int playing = patch_playlist_step(show.set, show.index, ms);
+            if (playing >= 0 && playing != last_step) {
                 const patch_t *p = &show.set->patches[show.index];
-                ESP_LOGI(TAG, "%s: %s", p->name, show.set->patches[p->playlist[step].patch].name);
+                ESP_LOGI(TAG, "%s: %s", p->name, show.set->patches[p->playlist[playing].patch].name);
             }
-            last_step = step;
+            last_step = playing;
         } else {
             effects_render_test(show.index, ms, frame, LED_COUNT);
             const char *phase = effects_test_phase(show.index, ms);
@@ -536,8 +422,36 @@ static void led_task(void *arg)
 
         uint16_t level = full_scale ? LEVEL_FULL : (uint32_t)settings.brightness * LEVEL_FULL / BRIGHTNESS_MAX;
         show_frame(level);
-        if (++frames % PREVIEW_EVERY == 0 && !link_open)
-            draw_preview();
+
+        // ---- Screen, as the switch picks it
+        screen_t want = panel == PANEL_SETUP ? SCREEN_SETUP
+                      : panel == PANEL_EDIT  ? SCREEN_EDIT
+                      :                        SCREEN_PLAY;
+        if (want != drawn || (network_changed && want == SCREEN_SETUP)) {
+            if (want == SCREEN_SETUP) draw_setup(&network);
+            if (want == SCREEN_EDIT)  draw_edit(&network);
+            if (want == SCREEN_PLAY) {
+                screen_play();
+                draw_network(&network);
+                redraw_patch = redraw_brightness = redraw_speed = true;
+            }
+            drawn = want;
+        } else if (want == SCREEN_PLAY && network_changed) {
+            draw_network(&network);
+        }
+        if (drawn == SCREEN_PLAY) {
+            if (redraw_patch)      screen_patch(show.name, draft);
+            if (redraw_brightness) screen_brightness(settings.brightness);
+            if (redraw_speed)      draw_speed(settings.speed_steps[slot]);
+            redraw_patch = redraw_brightness = redraw_speed = false;
+            if (++frames % PREVIEW_EVERY == 0) {
+                screen_preview(frame, LED_COUNT);
+                screen_mic(mic_level());
+            }
+        } else {
+            frames++;
+        }
+
         publish_state(&settings, draft, speed);
 
         if (now >= next_heartbeat_us) {
@@ -569,7 +483,8 @@ void app_main(void)
     commands = xQueueCreate(8, sizeof(command_t));
     wifi_start(HOSTNAME);
     web_start(wifi_web_server());
+    mic_start(MIC_PIN_SCK, MIC_PIN_WS, MIC_PIN_SD, MIC_CORE);
     // Interrupts are set up on the core that registers them, so the strip,
-    // encoder and LCD are all initialised inside the task
+    // encoders and LCD are all initialised inside the task
     xTaskCreatePinnedToCore(led_task, "leds", LED_STACK, NULL, LED_PRIORITY, NULL, LED_CORE);
 }

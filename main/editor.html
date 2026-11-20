@@ -146,7 +146,7 @@
       </div>
       <div class="field" style="margin-top:12px"><label for="speed">Speed</label>
         <div class="row"><input id="speed" type="range" min="-15" max="15" step="1" value="0"><span id="speed-value" class="dim">1.00x</span></div>
-        <div class="hint">Like the knob on the device: preview only, not saved.</div></div>
+        <div class="hint">Like the right-hand knob on the device: preview only, not saved.</div></div>
       <div class="field"><label for="led-count">LEDs</label>
         <div class="row"><input id="led-count" type="number" min="1" max="300"><span class="dim" id="led-count-hint"></span></div></div>
       <label class="check"><input id="live" type="checkbox"> Show edits on the strip as I make them</label>
@@ -274,6 +274,12 @@ function say(text, kind) {
   m.className = kind || 'dim';
 }
 
+// Older files gave each patch a "knob"; the knobs now have fixed jobs, so it's dropped
+function withoutKnobs(library) {
+  for (const p of library.patches || []) if (p && typeof p === 'object') delete p.knob;
+  return library;
+}
+
 function libText() {
   return JSON.stringify(lib);
 }
@@ -357,7 +363,8 @@ function renderCards() {
     play.onclick = e => { e.stopPropagation(); playSaved(p.name); };
     const top = el('div', { className: 'row' }, el('span', { className: 'name', textContent: p.name }),
                    el('span', { className: 'spacer' }), clone, play);
-    const tag = p.playlist ? p.playlist.length + (p.playlist.length === 1 ? ' step' : ' steps') : 'knob: ' + (p.knob || 'speed');
+    const tag = p.playlist ? p.playlist.length + (p.playlist.length === 1 ? ' step' : ' steps')
+              : p.colour && Array.isArray(p.colour.palette) ? p.colour.palette.length + (p.colour.palette.length === 1 ? ' colour' : ' colours') : '';
     const info = el('div', { className: 'row' }, el('span', { className: 'tag', textContent: tag }), el('span', { className: 'playing' }));
     info.dataset.name = p.name;
     card.append(canvas, top, info);
@@ -664,9 +671,7 @@ function renderEditor() {
     $('editor-title').textContent = 'Edit ' + p.name;
     changed(false);
   };
-  const general = fieldset('Name and knob',
-    field('Name', name, 'Shown on the device screen'),
-    field('Knob', dropdown(p, 'knob', p.playlist ? 'brightness' : 'speed', [['speed', 'Speed'], ['brightness', 'Brightness']], false)));
+  const general = fieldset('Name', field('Name', name, 'Shown on the device screen'));
   const parts = [general];
   if (p.playlist) parts.push(playlistEditor(p));
   else parts.push(glowEditor(p), colourEditor(p));
@@ -713,7 +718,7 @@ $('new-patch').onclick = () => addPatch({ name: uniqueName('New'), glow: { a: { 
 $('new-playlist').onclick = () => {
   const names = plainPatches();
   if (!names.length) return say('Make a patch first: playlists play other patches', 'bad');
-  addPatch({ name: uniqueName('Playlist'), knob: 'brightness', playlist: [{ patch: names[0], secs: 30 }] });
+  addPatch({ name: uniqueName('Playlist'), playlist: [{ patch: names[0], secs: 30 }] });
 };
 $('duplicate').onclick = () => clonePatch(selected);
 $('delete').onclick = () => {
@@ -768,7 +773,7 @@ function replaceLibrary(text, message) {
   } catch (e) {
     return say("Can't use that: " + (e instanceof SyntaxError ? 'not valid JSON' : e.message), 'bad');
   }
-  lib = obj;
+  lib = withoutKnobs(obj);
   selected = 0;
   resetPreview();
   changed(true);
@@ -996,7 +1001,7 @@ async function start() {
       return;
     }
   }
-  lib = JSON.parse(text);
+  lib = withoutKnobs(JSON.parse(text));
   savedText = libText();
   if (device) ledCount = device.leds;
   $('led-count').value = ledCount;

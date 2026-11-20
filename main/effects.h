@@ -15,7 +15,5 @@ void effects_render_test(test_t test, uint32_t ms, rgb16_t *frame, int count);
 // for the whole phase, so callers can log changes.
 const char *effects_test_phase(test_t test, uint32_t ms);
 
-knob_role_t effects_test_knob(test_t test);
-
 // Whether the test ignores the brightness setting
 bool effects_test_full_scale(test_t test);

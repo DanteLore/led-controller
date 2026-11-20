@@ -308,8 +308,8 @@ function read_patch(r, obj, patches) {
     p.name = name;
     r.where = name;
 
+    // "knob" from older files is ignored: the knobs now have fixed jobs
     const playlist = has(obj, 'playlist');
-    p.knob = choice(r, obj, 'knob', ['speed', 'brightness'], playlist ? 1 : 0) === 1 ? 'brightness' : 'speed';
     if (playlist) {
         read_playlist(r, obj.playlist, patches, p);
         return p;

@@ -130,7 +130,6 @@ static bool parse_colour(const char *s, rgb16_t *out)
     return true;
 }
 
-static const char *const KNOBS[]   = { "speed", "brightness" };
 static const char *const MIXES[]   = { "blend", "multiply" };
 static const char *const BLENDS[]  = { "smooth", "steps" };
 static const char *const SOURCES[] = { "glow", "osc" };
@@ -260,8 +259,8 @@ static void read_patch(reader_t *r, const cJSON *obj, const cJSON *patches, patc
     strlcpy(p->name, name->valuestring, sizeof(p->name));
     r->where = p->name;
 
+    // "knob" from older files is ignored: the knobs now have fixed jobs
     const cJSON *playlist = cJSON_GetObjectItemCaseSensitive(obj, "playlist");
-    p->knob = choice(r, obj, "knob", KNOBS, 2, playlist ? KNOB_BRIGHTNESS : KNOB_SPEED);
     if (playlist) {
         read_playlist(r, playlist, patches, p);
         return;

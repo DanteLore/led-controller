@@ -62,11 +62,6 @@ const char *effects_test_phase(test_t test, uint32_t ms)
          :                                     DIM_FADE_IN;
 }
 
-knob_role_t effects_test_knob(test_t test)
-{
-    return test == TEST_DIM ? KNOB_SPEED : KNOB_BRIGHTNESS;
-}
-
 bool effects_test_full_scale(test_t test)
 {
     return test == TEST_DIM;

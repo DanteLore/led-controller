@@ -165,15 +165,25 @@ td input { width: 18px; height: 18px; accent-color: var(--wire); }
 
   <section class="pagebreak">
     <h2>Connections to make</h2>
+    <p class="sub" style="margin:0 0 12px">The module's can reads ESP32-WROOM-32 (checked 2026-11-20), so GPIO16/17 are free for the switch. 3.3V (B1) and GND (B2, T2) each feed several parts: use a Wago or a strip of perfboard to share them. On the knobs and the mic, go by the labels printed on each board, not the pin order.</p>
     <div class="tbl"><table>
       <thead><tr><th></th><th>Board pin</th><th>Underside label</th><th>Goes to</th></tr></thead>
       <tbody>
         <tr><td><input type="checkbox" aria-label="done"></td><td><code>T3 GPIO13</code></td><td>CH4 / ADC14</td><td>330Ω → strip DIN</td></tr>
-        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T9 GPIO33</code></td><td>CH8 / ADC5</td><td>Encoder CLK</td></tr>
-        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T6 GPIO27</code></td><td>CH7 / ADC17</td><td>Encoder DT</td></tr>
-        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T5 GPIO14</code></td><td>CH6 / ADC16</td><td>Encoder SW</td></tr>
-        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B1 3.3V</code></td><td>3.3V</td><td>Encoder + (VCC). Not VIN: 5V on the encoder would put 5V on the GPIOs</td></tr>
-        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T2 GND</code></td><td>GND</td><td>Encoder GND, strip GND (B2 is GND too)</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T9 GPIO33</code></td><td>CH8 / ADC5</td><td>Left knob (brightness) CLK</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T6 GPIO27</code></td><td>CH7 / ADC17</td><td>Left knob DT</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T5 GPIO14</code></td><td>CH6 / ADC16</td><td>Left knob SW</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B10 GPIO19</code></td><td>MISO / 19</td><td>Right knob (speed) CLK</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B11 GPIO21</code></td><td>SDA / 21</td><td>Right knob DT</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B14 GPIO22</code></td><td>SCL / 22</td><td>Right knob SW. Skip B12 and B13 between them: USB serial</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B6 GPIO16</code></td><td>RX2 / 16</td><td>Mode switch outer lug (Setup)</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B7 GPIO17</code></td><td>TX2 / 17</td><td>Mode switch other outer lug (Edit). If Setup and Edit come out swapped, swap these two wires</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T7 GPIO26</code></td><td>DAC2 / ADC19</td><td>Mic SCK</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T8 GPIO25</code></td><td>DAC1 / ADC18</td><td>Mic WS</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T11 GPIO35</code></td><td>ADC7</td><td>Mic SD</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B1 3.3V</code></td><td>3.3V</td><td>Both knobs' + and mic VDD. Not VIN: 5V would put 5V on the GPIOs and kill the mic</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>T2 GND</code></td><td>GND</td><td>Left knob GND, strip GND</td></tr>
+        <tr><td><input type="checkbox" aria-label="done"></td><td><code>B2 GND</code></td><td>GND</td><td>Right knob GND, mode switch middle (common) lug, mic GND and mic L/R (L/R to GND picks the left channel; don't leave it floating)</td></tr>
         <tr><td><input type="checkbox" aria-label="done"></td><td><code>T1 VIN</code></td><td>VIN</td><td>Nothing on USB power. Buck OUT+ (5.0V) only when running without USB</td></tr>
       </tbody>
     </table></div>
@@ -194,34 +204,34 @@ td input { width: 18px; height: 18px; accent-color: var(--wire); }
 <script>
 // Top view, left to right from the USB end: [name, role, kind, underside label]
 const bottomRow = [
-  ["3.3V", "Encoder +", "pwr", "3.3V"],
-  ["GND", "Ground", "gnd", "GND"],
+  ["3.3V", "Knobs, mic", "pwr", "3.3V"],
+  ["GND", "Knob, switch, mic", "gnd", "GND"],
   ["GPIO15", "LCD CS", "lcd", "CH3 / 15"],
   ["GPIO2", "LCD DC", "lcd", "CH2 / 2"],
   ["GPIO4", "LCD RST", "lcd", "CH0 / 4"],
-  ["GPIO16", "Free", "off", "RX2 / 16"],
-  ["GPIO17", "Free", "off", "TX2 / 17"],
+  ["GPIO16", "Switch: Setup", "wire", "RX2 / 16"],
+  ["GPIO17", "Switch: Edit", "wire", "TX2 / 17"],
   ["GPIO5", "Free (boot pin)", "off", "SS / 5"],
   ["GPIO18", "LCD SCLK", "lcd", "SCK / 18"],
-  ["GPIO19", "Free", "off", "MISO / 19"],
-  ["GPIO21", "Free", "off", "SDA / 21"],
+  ["GPIO19", "Right knob CLK", "wire", "MISO / 19"],
+  ["GPIO21", "Right knob DT", "wire", "SDA / 21"],
   ["GPIO3", "RX0, USB serial", "off", "RX / 3"],
   ["GPIO1", "TX0, USB serial", "off", "TX / 1"],
-  ["GPIO22", "Free", "off", "SCL / 22"],
+  ["GPIO22", "Right knob SW", "wire", "SCL / 22"],
   ["GPIO23", "LCD MOSI", "lcd", "MOSI / 23"],
 ];
 const topRow = [
   ["VIN 5V", "Buck OUT+ only", "pwr", "VIN"],
-  ["GND", "Encoder + strip GND", "gnd", "GND"],
+  ["GND", "Knob, strip", "gnd", "GND"],
   ["GPIO13", "330Ω → strip DIN", "wire", "CH4 · ADC14"],
   ["GPIO12", "Avoid (boot pin)", "off", "CH5 · ADC15"],
-  ["GPIO14", "Encoder SW", "wire", "CH6 · ADC16"],
-  ["GPIO27", "Encoder DT", "wire", "CH7 · ADC17"],
-  ["GPIO26", "Free", "off", "DAC2 · ADC19"],
-  ["GPIO25", "Free", "off", "DAC1 · ADC18"],
-  ["GPIO33", "Encoder CLK", "wire", "CH8 · ADC5"],
+  ["GPIO14", "Left knob SW", "wire", "CH6 · ADC16"],
+  ["GPIO27", "Left knob DT", "wire", "CH7 · ADC17"],
+  ["GPIO26", "Mic SCK", "wire", "DAC2 · ADC19"],
+  ["GPIO25", "Mic WS", "wire", "DAC1 · ADC18"],
+  ["GPIO33", "Left knob CLK", "wire", "CH8 · ADC5"],
   ["GPIO32", "LCD backlight", "lcd", "CH9 · ADC4"],
-  ["GPIO35", "Input only", "off", "ADC7"],
+  ["GPIO35", "Mic SD", "wire", "ADC7"],
   ["GPIO34", "Input only", "off", "ADC6"],
   ["GPIO39", "Input only", "off", "ADC3"],
   ["GPIO36", "Input only", "off", "ADC0"],
