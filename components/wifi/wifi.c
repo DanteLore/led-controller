@@ -34,6 +34,7 @@ static bool hotspot;
 static bool ever_connected;   // since the network was last chosen: drops are then retried forever
 static int attempts;
 static char ip[16];
+static char hotspot_ssid[33];
 static const char *error;
 
 static void take(void) { xSemaphoreTake(lock, portMAX_DELAY); }
@@ -59,6 +60,7 @@ static void start_hotspot(void)
     esp_wifi_get_mac(WIFI_IF_AP, mac);
     wifi_config_t config = { .ap = { .channel = 1, .max_connection = 4, .authmode = WIFI_AUTH_OPEN } };
     config.ap.ssid_len = snprintf((char *)config.ap.ssid, sizeof(config.ap.ssid), "LED-Setup-%02X%02X", mac[4], mac[5]);
+    strlcpy(hotspot_ssid, (char *)config.ap.ssid, sizeof(hotspot_ssid));
 
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &config);
@@ -254,6 +256,7 @@ void wifi_get_status(wifi_status_t *status)
     status->hotspot = hotspot;
     saved_ssid(status->ssid, sizeof(status->ssid));
     strlcpy(status->ip, ip, sizeof(status->ip));
+    strlcpy(status->hotspot_ssid, hotspot ? hotspot_ssid : "", sizeof(status->hotspot_ssid));
     status->error = error;
     give();
 }

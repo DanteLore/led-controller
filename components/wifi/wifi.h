@@ -10,6 +10,7 @@ typedef struct {
     bool hotspot;        // setup hotspot is up
     char ssid[33];       // network being joined or joined
     char ip[16];         // empty until connected
+    char hotspot_ssid[33];   // the setup hotspot's name, while it's up
     const char *error;   // why the last attempt failed, or NULL
 } wifi_status_t;
 

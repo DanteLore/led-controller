@@ -19,6 +19,10 @@
   label { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: var(--dim); }
   label input { width: auto; margin: 0; }
   a { color: var(--accent); }
+  .joined { border-color: var(--accent); }
+  .address { display: block; font: 600 1.3em/1.3 ui-monospace, monospace; margin: 8px 0; word-break: break-all; }
+  ol { margin: 8px 0 0; padding-left: 1.3em; }
+  li { margin: 4px 0; }
 </style>
 </head>
 <body>
@@ -52,21 +56,69 @@ function line(text, href) {
   return div;
 }
 
+function el(tag, text) {
+  const e = document.createElement(tag);
+  if (text) e.textContent = text;
+  return e;
+}
+
+// Clipboard access needs https, which the board can't do, so fall back to a selection
+function copyBySelection(text) {
+  const area = el('textarea');
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  area.remove();
+  return ok;
+}
+
+function copy(text, button) {
+  const result = ok => { button.textContent = ok ? 'Copied' : 'Press and hold the address to copy it'; };
+  if (navigator.clipboard && window.isSecureContext)
+    navigator.clipboard.writeText(text).then(() => result(true), () => result(copyBySelection(text)));
+  else
+    result(copyBySelection(text));
+}
+
+// Once joined, the phone has to leave this hotspot to reach the board, so
+// spell out the address and how to get back to it
+function joinedCard(s) {
+  const url = 'http://' + s.ip + '/';
+  const card = $('status');
+  card.className = 'card joined';
+  const link = el('a', url);
+  link.href = url;
+  link.className = 'address';
+  const button = el('button', 'Copy address');
+  button.type = 'button';
+  button.onclick = () => copy(url, button);
+  const steps = el('ol');
+  steps.append(el('li', 'Switch your phone back to ' + s.ssid + ' (this setup network closes in a minute).'),
+               el('li', 'Open the address above in your browser, or scan the QR code on the controller\'s screen.'),
+               el('li', 'Bookmark it, or add it to your home screen. Lost it later? Hold the controller\'s button for the QR code.'));
+  card.replaceChildren(el('div', 'Joined ' + s.ssid + '. Your controller is at:'), link, button);
+  if (s.hotspot) card.append(steps);   // reached over the home network already, nothing to switch
+}
+
 function showStatus(s) {
   const connected = s.state === 'connected';
   $('join-heading').textContent = connected ? 'Change network' : 'Join a network';
   $('join-button').textContent = connected ? 'Change network' : 'Join';
+  if (connected) {
+    if ($('status').dataset.ip !== s.ip) joinedCard(s);   // rebuilding would undo "Copied"
+    $('status').dataset.ip = s.ip;
+    return;
+  }
+  $('status').className = 'card dim';
+  $('status').dataset.ip = '';
   const lines = [];
-  if (s.state === 'connected') {
-    lines.push(line('Connected to ' + s.ssid));
-    lines.push(line('Address: ', 'http://' + s.ip + '/'));
-    if (s.hotspot) lines.push(line('The setup hotspot closes in a minute. Switch your phone back to your normal WiFi and use the address above.'));
-  } else if (s.state === 'connecting') {
+  if (s.state === 'connecting') {
     lines.push(line('Connecting to ' + s.ssid + '…'));
   } else {
     lines.push(line(s.ssid ? "Couldn't join " + s.ssid : 'Not set up yet: choose a network below'));
   }
-  if (s.error && s.state !== 'connected') lines.push(line('Last attempt: ' + s.error));
+  if (s.error) lines.push(line('Last attempt: ' + s.error));
   $('status').replaceChildren(...lines);
 }
 

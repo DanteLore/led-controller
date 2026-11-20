@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Serves the patch editor on this Mac, with a pretend controller behind it,
-so the page can be worked on without the board. Nothing reaches the strip;
+so the pages can be worked on without the board. Nothing reaches the strip;
 saves last until the server stops. Standard library only.
 
     tools/editor_server.py          then open http://localhost:8000/
@@ -16,7 +16,10 @@ FILES = {
     '/': (ROOT / 'main/editor.html', 'text/html'),
     '/patch.js': (ROOT / 'components/patch/patch.js', 'text/javascript'),
     '/api/presets': (ROOT / 'main/presets.json', 'application/json'),
+    '/wifi': (ROOT / 'components/wifi/setup.html', 'text/html'),
 }
+# The WiFi page sees a board that has just joined, as a phone on the hotspot would
+WIFI_STATUS = {'state': 'connected', 'hotspot': True, 'ssid': 'HomeWiFi', 'ip': '192.168.1.50', 'error': ''}
 TESTS = ['RGB TEST', 'DIM TEST']
 LEDS = 10
 
@@ -51,8 +54,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/state':
             names = [p['name'] for p in json.loads(library_text())['patches']] + TESTS
             return self.send(200, json.dumps({**state, 'modes': names}), 'application/json')
-        if path == '/wifi':
-            return self.send(200, 'The WiFi page only exists on the controller')
+        if path == '/wifi/status':
+            return self.send(200, json.dumps(WIFI_STATUS), 'application/json')
+        if path == '/wifi/scan':
+            return self.send(200, json.dumps([{'ssid': 'HomeWiFi', 'rssi': -55, 'secure': True}]), 'application/json')
         self.send(404, 'Not found')
 
     def do_POST(self):

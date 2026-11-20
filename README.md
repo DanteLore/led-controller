@@ -25,6 +25,7 @@ led-controller/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
 │   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
+│   ├── qr/              ← minimal QR code encoder for the LCD (versions 2–3, byte mode)
 │   ├── patch/           ← patch engine: patch.c (render), patch_json.c (read), patch.js
 │   │                      (JavaScript copy for the editor), test/run.sh (checks they agree)
 │   └── wifi/            ← joins WiFi, setup hotspot, captive DNS, setup page (setup.html)
@@ -60,7 +61,7 @@ See HARDWARE.md for full details.
 
 Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). Direct 3.3V data (D13 → 330Ω → DIN) works: RGB TEST shows red, green, blue thirds, and everything runs at a steady 200fps. With the 74AHCT125 in circuit the first pixel flickered and the rest froze, so the shifter has been left out for now; direct 3.3V is the working setup. The KY-040 encoder is connected (CLK D33, DT D27, SW D14, + 3V3). `LED_ORDER` (BRG) is confirmed correct on this strip. The diymore LCD board is waiting on a replacement screen; the `lcd` build compiles but hasn't run on hardware.
 
-- **Button:** next mode (each starts from its beginning): the patches in the library in order, then RGB TEST and DIM TEST. **Knob:** speed or brightness, as each patch says. `STARTUP_MODE` in `main.c` picks the first mode.
+- **Button:** press (acted on when let go) for the next mode (each starts from its beginning): the patches in the library in order, then RGB TEST and DIM TEST. Hold for about a second for the QR screen. **Knob:** speed or brightness, as each patch says. `STARTUP_MODE` in `main.c` picks the first mode.
 
 Modes are patches (see **Patches** below), edited from a phone or laptop. The presets:
 
@@ -86,19 +87,20 @@ Always after the patches, in C:
 - **Brightness** is perceptual 0–100% (default 50%, roughly 22% PWM), shared by all modes
 - **Speed** is per mode, so each moving mode remembers its own. Knob steps are logarithmic: every 5 clicks doubles or halves it, from 1/8x to 8x, so each click feels the same size at any speed. Changing speed changes the rate of motion without the effect jumping, because effect time is accumulated as real time × speed
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
-- LCD shows the mode, whichever setting the knob controls (with a bar), and a live preview of the strip
+- LCD shows the mode, whichever setting the knob controls (with a bar), and a live preview of the strip. The title line shows the board's address once joined, or WIFI SETUP while the hotspot is up
+- **QR screen:** a QR code with the editor's address, so a phone camera opens it. It comes up for 60s whenever the board joins a network, and on a long press; a short press closes it. While the setup hotspot is up it shows a WiFi QR code instead, which joins the hotspot so the setup page pops up
 - Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`, `HOSTNAME`
 
 ### Patch editor
 
-Browse to the board's address (logged on serial once it joins WiFi). The page shows the library as live previews; click one to edit it. It has a big preview with a history view (each LED a column, newest at the top) and a brightness graph, then the patch's settings. "Show edits on the strip as I make them" plays the unsaved version on the strip (the screen says EDIT; the button goes back to the saved one). **Save to device** keeps it in flash; Download and Upload move libraries around as JSON files; Reset to presets loads the built-in ones (saving makes it stick). The page also sets brightness and plays any saved patch. It works on a phone (single column).
+Browse to the board's address (logged on serial once it joins WiFi). The page has two tabs, Patches and Playlists, each showing its cards as live previews; click one to edit it, ⧉ clones it. Playlists are built by dragging patch chips into the step list (or tapping a chip to add it at the end) and dragging ⠿ to reorder; this works with a finger too. It has a big preview with a history view (each LED a column, newest at the top) and a brightness graph, then the patch's settings. "Show edits on the strip as I make them" plays the unsaved version on the strip (the screen says EDIT; the button goes back to the saved one). **Save to device** keeps it in flash; Download and Upload move libraries around as JSON files; Reset to presets loads the built-in ones (saving makes it stick). The page also sets brightness and plays any saved patch. It works on a phone (single column).
 
-To work on the page without the board: `tools/editor_server.py`, then open `http://localhost:8000/`. It serves the same files with a pretend controller.
+To work on the pages without the board: `tools/editor_server.py`, then open `http://localhost:8000/` (the WiFi page at `/wifi` shows a board that has just joined). It serves the same files with a pretend controller.
 
 ### WiFi
 
 - **First boot, or after moving house:** with no saved network, the board opens an open hotspot called `LED-Setup-XXXX` (last digits of its MAC). Join it from a phone and the setup page pops up as a captive portal, like hotel WiFi (Android shows a "Sign in to Wi-Fi network" notification); if it doesn't, browse to `http://4.3.2.1/wifi`. On Android, turn mobile data off first: with it on, the phone sends traffic for a no-internet network over mobile data and never reaches the board
-- The page scans for networks (2.4GHz only: the ESP32 has no 5GHz radio), you tap one, enter the password and press Join. The page shows progress and, once joined, the board's new address, and the Join button becomes Change network. The hotspot stays up for a minute so the phone can read it, then closes
+- The page scans for networks (2.4GHz only: the ESP32 has no 5GHz radio), you tap one, enter the password and press Join. The page shows progress and, once joined, the board's new address in large type with a Copy button and the steps to get back to it (switch WiFi back, open the address or scan the QR code on the LCD), and the Join button becomes Change network. The hotspot stays up for a minute so the phone can read it, then closes
 - The network is saved in flash by the WiFi driver, so later boots join straight away. The board's address is logged on serial, and it asks the router for the hostname `led-controller`
 - **Can't join the saved network** (5 attempts, about 15s): the hotspot comes back, with the reason (not found, wrong password) on the page. If no phone uses it for 5 minutes, it closes and the saved network is tried again, so a router outage or power cut sorts itself out
 - **Dropped after joining:** retried every 3s indefinitely, without the hotspot

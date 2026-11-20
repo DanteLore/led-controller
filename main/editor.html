@@ -37,6 +37,22 @@
   .tag { font-size: 0.75em; padding: 1px 6px; border-radius: 4px; background: var(--raised); color: var(--dim); }
   .tag.edit { background: var(--accent); color: var(--accent-text); }
 
+  #tabs { display: flex; gap: 4px; margin: 18px 0 4px; border-bottom: 1px solid var(--line); }
+  #tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 14px; color: var(--dim); font-weight: 600; }
+  #tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  #tabs .count { font-weight: 400; color: var(--dim); }
+  .empty { color: var(--dim); padding: 12px 0; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 4px 10px 4px 5px; cursor: grab; user-select: none; touch-action: none; }
+  .chip:hover { border-color: var(--dim); }
+  .chip canvas { width: 34px; height: 12px; border-radius: 6px; background: #000; display: block; }
+  .steps { display: flex; flex-direction: column; gap: 6px; min-height: 48px; margin-top: 6px; }
+  .steps .placeholder { border: 2px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; color: var(--dim); }
+  .handle { cursor: grab; color: var(--dim); padding: 4px 6px; touch-action: none; user-select: none; font-size: 1.1em; }
+  .drag-ghost { position: fixed; z-index: 10; pointer-events: none; transform: translate(-50%, -130%); background: var(--accent); color: var(--accent-text); font-weight: 600; padding: 4px 10px; border-radius: 14px; box-shadow: 0 4px 14px #0008; }
+  .drop-line { position: fixed; z-index: 9; height: 3px; background: var(--accent); border-radius: 2px; pointer-events: none; }
+
   #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
   .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -69,7 +85,9 @@
   .swatch input { width: 38px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
   .swatch button { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; }
   #palette-bar { width: 100%; height: 18px; border-radius: 4px; display: block; margin-top: 8px; }
-  .step { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 6px; align-items: center; margin: 6px 0; }
+  .step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+  .step .step-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 480px) { .step { grid-template-columns: auto minmax(0, 1fr) auto auto; } .step .ramp { grid-column: 2 / 5; order: 2; } }
   .step input[type=number] { width: 4.5em; }
   #problem { background: color-mix(in srgb, var(--bad) 18%, transparent); border: 1px solid var(--bad); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
   #problem:empty { display: none; }
@@ -96,7 +114,11 @@
     </div>
   </header>
 
-  <h2>Library <span class="dim" style="font-weight:400">· click one to edit it, ▶ plays the saved version on the strip</span></h2>
+  <nav id="tabs">
+    <button data-tab="patches">Patches <span class="count" id="patch-count"></span></button>
+    <button data-tab="playlists">Playlists <span class="count" id="playlist-count"></span></button>
+  </nav>
+  <p class="dim" id="tab-intro"></p>
   <div id="cards"></div>
   <div id="library-actions" class="row">
     <button id="new-patch">New patch</button>
@@ -108,6 +130,7 @@
     <button id="reset">Reset to presets…</button>
   </div>
 
+  <div id="editor-section">
   <h2 id="editor-title">Edit</h2>
   <div id="editor">
     <div class="panel" id="preview-panel">
@@ -132,13 +155,14 @@
       <div id="problem"></div>
       <div id="fields"></div>
       <div class="row">
-        <button id="duplicate">Duplicate</button>
+        <button id="duplicate">Clone</button>
         <button id="move-up">Move up</button>
         <button id="move-down">Move down</button>
         <span class="spacer"></span>
         <button id="delete">Delete</button>
       </div>
     </div>
+  </div>
   </div>
 
   <details id="json-details" style="margin-top:20px">
@@ -173,6 +197,10 @@ let device = null;       // last /api/state, or null if the controller can't be 
 let ledCount = 10;
 let live = false, liveSince = 0;
 let speedSteps = 0;
+let tab = 'patches';     // or 'playlists': which kind the cards and editor show
+
+const isPlaylist = p => !!p.playlist;
+const inTab = p => isPlaylist(p) === (tab === 'playlists');
 
 // ---- Talking to the controller -------------------------------------------
 
@@ -276,6 +304,7 @@ function changed(structural) {
 
 function select(i) {
   selected = Math.max(0, Math.min(i, lib.patches.length - 1));
+  tab = isPlaylist(lib.patches[selected]) ? 'playlists' : 'patches';
   resetPreview();
   renderEditor();
   renderCards();
@@ -283,6 +312,7 @@ function select(i) {
 }
 
 function uniqueName(base) {
+  base = base.replace(/ \d+$/, '');   // a clone of "Embers 2" is "Embers 3", not "Embers 2 2"
   for (let n = 1; ; n++) {
     const name = n === 1 ? base : base.slice(0, 13) + ' ' + n;
     if (!lib.patches.some(p => p.name === name)) return name;
@@ -295,25 +325,41 @@ function plainPatches() {
 
 // ---- Library cards ---------------------------------------------------------
 
+const TAB_INTRO = {
+  patches: 'Each patch is a look: oscillators for brightness, and a palette. Click one to edit it, ⧉ clones it, ▶ plays the saved version on the strip.',
+  playlists: 'A playlist plays patches in turn, like Demo. Click one to edit it, ⧉ clones it, ▶ plays the saved version on the strip.',
+};
+
 function renderCards() {
+  const indices = lib.patches.map((p, i) => i).filter(i => inTab(lib.patches[i]));
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $('patch-count').textContent = lib.patches.filter(p => !isPlaylist(p)).length;
+  $('playlist-count').textContent = lib.patches.filter(isPlaylist).length;
+  $('tab-intro').textContent = TAB_INTRO[tab];
+  $('new-patch').hidden = tab !== 'patches';
+  $('new-playlist').hidden = tab !== 'playlists';
+  $('editor-section').hidden = !indices.length;
+
   const cards = $('cards');
-  cards.replaceChildren(...lib.patches.map((p, i) => {
-    const card = document.createElement('div');
-    card.className = 'card' + (i === selected ? ' selected' : '');
+  if (!indices.length) {
+    cards.replaceChildren(el('div', { className: 'empty', textContent: 'No playlists yet. New playlist makes one.' }));
+    return;
+  }
+  cards.replaceChildren(...indices.map(i => {
+    const p = lib.patches[i];
+    const card = el('div', { className: 'card' + (i === selected ? ' selected' : '') });
     card.onclick = () => select(i);
-    const canvas = document.createElement('canvas');
+    const canvas = el('canvas');
     canvas.dataset.index = i;
-    const top = document.createElement('div');
-    top.className = 'row';
-    const name = Object.assign(document.createElement('span'), { className: 'name', textContent: p.name });
-    const play = Object.assign(document.createElement('button'), { className: 'small', textContent: '▶', title: 'Play the saved version on the strip' });
+    const clone = el('button', { className: 'small', textContent: '⧉', title: 'Clone', disabled: lib.patches.length >= Patch.PATCH_MAX });
+    clone.onclick = e => { e.stopPropagation(); clonePatch(i); };
+    const play = el('button', { className: 'small play', textContent: '▶', title: 'Play the saved version on the strip' });
     play.onclick = e => { e.stopPropagation(); playSaved(p.name); };
-    play.dataset.name = p.name;
-    top.append(name, Object.assign(document.createElement('span'), { className: 'spacer' }), play);
-    const info = document.createElement('div');
-    info.className = 'row';
-    info.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: p.playlist ? 'playlist' : 'knob: ' + (p.knob || 'speed') }),
-                Object.assign(document.createElement('span'), { className: 'playing', textContent: '' }));
+    const top = el('div', { className: 'row' }, el('span', { className: 'name', textContent: p.name }),
+                   el('span', { className: 'spacer' }), clone, play);
+    const tag = p.playlist ? p.playlist.length + (p.playlist.length === 1 ? ' step' : ' steps') : 'knob: ' + (p.knob || 'speed');
+    const info = el('div', { className: 'row' }, el('span', { className: 'tag', textContent: tag }), el('span', { className: 'playing' }));
+    info.dataset.name = p.name;
     card.append(canvas, top, info);
     return card;
   }));
@@ -322,13 +368,21 @@ function renderCards() {
 
 function updateCardStatus() {
   const savedNames = device ? device.modes : [];
-  document.querySelectorAll('.card').forEach((card, i) => {
-    const name = lib.patches[i] && lib.patches[i].name;
+  document.querySelectorAll('.card').forEach(card => {
+    const name = card.querySelector('[data-name]').dataset.name;
     const playing = device && !device.draft && savedNames[device.mode] === name;
     card.querySelector('.playing').textContent = playing ? '● on the strip' : '';
-    card.querySelector('button').disabled = !device || savedNames.indexOf(name) < 0;
+    card.querySelector('.play').disabled = !device || savedNames.indexOf(name) < 0;
   });
 }
+
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  if (tab === b.dataset.tab) return;
+  tab = b.dataset.tab;
+  const first = lib.patches.findIndex(inTab);
+  if (first >= 0) select(first);
+  else renderCards();
+});
 
 async function playSaved(name) {
   const mode = device ? device.modes.indexOf(name) : -1;
@@ -486,15 +540,91 @@ function colourEditor(p) {
   return box;
 }
 
+// Pointer events rather than HTML drag and drop, so it works with a finger too.
+// A press that doesn't move is a tap. dropAt(index) gets the step position under
+// the pointer when it's let go over the playlist.
+function draggable(handle, label, onTap, dropAt) {
+  handle.addEventListener('pointerdown', e => {
+    if (e.button) return;
+    e.preventDefault();
+    const x0 = e.clientX, y0 = e.clientY;
+    let ghost = null, at = null;
+    const line = el('div', { className: 'drop-line' });
+    handle.setPointerCapture(e.pointerId);
+    const move = ev => {
+      if (!ghost && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      if (!ghost) document.body.append(ghost = el('div', { className: 'drag-ghost', textContent: label }));
+      ghost.style.left = ev.clientX + 'px';
+      ghost.style.top = ev.clientY + 'px';
+      at = dropIndex(ev.clientX, ev.clientY, line);
+    };
+    const end = ev => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      line.remove();
+      if (ghost) ghost.remove();
+      if (ev.type !== 'pointerup') return;
+      if (!ghost) { if (onTap) onTap(); }
+      else if (at !== null) dropAt(at);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  });
+}
+
+// Which gap between steps the pointer is nearest, with a line drawn there; null when away from the list
+function dropIndex(x, y, line) {
+  const list = $('steps');
+  const r = list.getBoundingClientRect();
+  if (x < r.left - 40 || x > r.right + 40 || y < r.top - 50 || y > r.bottom + 50) {
+    line.remove();
+    return null;
+  }
+  const rows = [...list.querySelectorAll('.step')];
+  let at = rows.findIndex(row => { const b = row.getBoundingClientRect(); return y < b.top + b.height / 2; });
+  if (at < 0) at = rows.length;
+  const lineY = !rows.length ? r.top + r.height / 2
+              : at < rows.length ? rows[at].getBoundingClientRect().top - 4
+              : rows[rows.length - 1].getBoundingClientRect().bottom + 2;
+  Object.assign(line.style, { left: r.left + 'px', width: r.width + 'px', top: lineY + 'px' });
+  if (!line.isConnected) document.body.append(line);
+  return at;
+}
+
+function addStep(p, name, at) {
+  if (p.playlist.length >= Patch.PATCH_PLAYLIST_MAX) return say('A playlist holds up to ' + Patch.PATCH_PLAYLIST_MAX + ' steps', 'bad');
+  p.playlist.splice(at, 0, { patch: name, secs: 30 });
+  changed(true);
+}
+
+function moveStep(p, from, to) {
+  if (to > from) to--;
+  if (to === from) return;
+  const [s] = p.playlist.splice(from, 1);
+  p.playlist.splice(to, 0, s);
+  changed(true);
+}
+
 function playlistEditor(p) {
   const names = plainPatches();
-  const box = fieldset('Playlist: plays other patches in turn');
+  const chips = el('div', { className: 'chips' });
+  for (const name of names) {
+    const canvas = el('canvas');
+    canvas.dataset.index = lib.patches.findIndex(q => q.name === name);
+    const chip = el('div', { className: 'chip', title: 'Drag into the playlist, or tap to add it at the end' }, canvas, name);
+    draggable(chip, name, () => addStep(p, name, p.playlist.length), at => addStep(p, name, at));
+    chips.append(chip);
+  }
+  const steps = el('div', { className: 'steps', id: 'steps' });
+  if (!p.playlist.length) steps.append(el('div', { className: 'placeholder', textContent: 'Drag patches here' }));
+
   p.playlist.forEach((s, i) => {
-    const pick = el('select');
-    for (const n of names) pick.append(el('option', { value: n, textContent: n }));
-    if (names.indexOf(s.patch) < 0) pick.append(el('option', { value: s.patch, textContent: s.patch + ' (missing)' }));
-    pick.value = s.patch;
-    pick.onchange = () => { s.patch = pick.value; changed(false); };
+    const handle = el('span', { className: 'handle', textContent: '⠿', title: 'Drag to reorder' });
+    draggable(handle, s.patch, null, at => moveStep(p, i, at));
+    const missing = names.indexOf(s.patch) < 0;
+    const name = el('span', { className: 'step-name' + (missing ? ' bad' : ''), textContent: s.patch + (missing ? ' (missing)' : '') });
     const secs = el('input', { type: 'number', min: 0.1, step: 1, value: s.secs, title: 'Seconds' });
     secs.oninput = () => { if (secs.value !== '') { s.secs = Number(secs.value); changed(false); } };
     const ramp = Array.isArray(s.speed) ? s.speed : [s.speed === undefined ? 1 : s.speed, s.speed === undefined ? 1 : s.speed];
@@ -508,15 +638,18 @@ function playlistEditor(p) {
       };
       return input;
     };
-    const remove = el('button', { className: 'small', textContent: '×', title: 'Remove step', disabled: p.playlist.length === 1 });
+    const remove = el('button', { className: 'small', textContent: '×', title: 'Remove step' });
     remove.onclick = () => { p.playlist.splice(i, 1); changed(true); };
-    box.append(el('div', { className: 'step' }, pick, el('span', { className: 'row' }, secs, 's'),
-      el('span', { className: 'row dim' }, speedInput(0), '→'), el('span', { className: 'row dim' }, speedInput(1), 'x'), remove));
+    steps.append(el('div', { className: 'step' }, handle, name, el('span', { className: 'row' }, secs, 's'),
+      el('span', { className: 'row dim ramp' }, 'speed', speedInput(0), '→', speedInput(1), 'x'), remove));
   });
-  const add = el('button', { textContent: 'Add step', disabled: p.playlist.length >= Patch.PATCH_PLAYLIST_MAX || !names.length });
-  add.onclick = () => { p.playlist.push({ patch: names[0], secs: 30 }); changed(true); };
-  box.append(el('div', { className: 'hint dim', textContent: 'Each step: patch, seconds, speed at the start → speed at the end (1 = normal).' }), add);
-  return box;
+
+  return fieldset('Playlist',
+    el('div', { className: 'caption' }, el('span', { textContent: 'Patches: drag into the playlist, or tap to add at the end' })),
+    names.length ? chips : el('div', { className: 'empty', textContent: 'Make a patch first: playlists play patches.' }),
+    el('div', { className: 'caption', style: 'margin-top:14px' },
+       el('span', { textContent: 'Steps, in order: drag ⠿ to reorder. Speed ramps from the first number to the second (1 = normal).' })),
+    steps);
 }
 
 function renderEditor() {
@@ -531,7 +664,7 @@ function renderEditor() {
     $('editor-title').textContent = 'Edit ' + p.name;
     changed(false);
   };
-  const general = fieldset('Patch',
+  const general = fieldset('Name and knob',
     field('Name', name, 'Shown on the device screen'),
     field('Knob', dropdown(p, 'knob', p.playlist ? 'brightness' : 'speed', [['speed', 'Speed'], ['brightness', 'Brightness']], false)));
   const parts = [general];
@@ -539,20 +672,40 @@ function renderEditor() {
   else parts.push(glowEditor(p), colourEditor(p));
   $('fields').replaceChildren(...parts);
   $('timeline-wrap').hidden = !p.playlist;
-  $('move-up').disabled = selected === 0;
-  $('move-down').disabled = selected === lib.patches.length - 1;
+  $('move-up').disabled = neighbour(-1) < 0;
+  $('move-down').disabled = neighbour(1) < 0;
   $('delete').disabled = lib.patches.length === 1;
   $('duplicate').disabled = lib.patches.length >= Patch.PATCH_MAX;
 }
 
 // ---- Library actions -------------------------------------------------------
 
-function addPatch(patch) {
-  if (lib.patches.length >= Patch.PATCH_MAX) return say('The device holds up to ' + Patch.PATCH_MAX + ' patches', 'bad');
-  lib.patches.splice(selected + 1, 0, patch);
-  selected++;
+// Goes after the patch it was made from, or the last of its kind
+function addPatch(patch, after) {
+  if (lib.patches.length >= Patch.PATCH_MAX) return say('The device holds up to ' + Patch.PATCH_MAX + ' patches and playlists', 'bad');
+  if (after === undefined) {
+    after = -1;
+    lib.patches.forEach((q, i) => { if (isPlaylist(q) === isPlaylist(patch)) after = i; });
+    if (after < 0) after = lib.patches.length - 1;
+  }
+  lib.patches.splice(after + 1, 0, patch);
+  selected = after + 1;
+  tab = isPlaylist(patch) ? 'playlists' : 'patches';
   resetPreview();
   changed(true);
+}
+
+function clonePatch(i) {
+  const copy = JSON.parse(JSON.stringify(lib.patches[i]));
+  copy.name = uniqueName(copy.name);
+  addPatch(copy, i);
+}
+
+// The next patch of the same kind before (-1) or after (+1) the selected one, or -1
+function neighbour(by) {
+  for (let i = selected + by; i >= 0 && i < lib.patches.length; i += by)
+    if (isPlaylist(lib.patches[i]) === isPlaylist(lib.patches[selected])) return i;
+  return -1;
 }
 
 $('new-patch').onclick = () => addPatch({ name: uniqueName('New'), glow: { a: { shape: 'sine', period: 4, scatter: 1 } },
@@ -560,27 +713,25 @@ $('new-patch').onclick = () => addPatch({ name: uniqueName('New'), glow: { a: { 
 $('new-playlist').onclick = () => {
   const names = plainPatches();
   if (!names.length) return say('Make a patch first: playlists play other patches', 'bad');
-  addPatch({ name: uniqueName('Playlist'), knob: 'brightness', playlist: names.slice(0, 3).map(n => ({ patch: n, secs: 30 })) });
+  addPatch({ name: uniqueName('Playlist'), knob: 'brightness', playlist: [{ patch: names[0], secs: 30 }] });
 };
-$('duplicate').onclick = () => {
-  const copy = JSON.parse(JSON.stringify(lib.patches[selected]));
-  copy.name = uniqueName(copy.name);
-  addPatch(copy);
-};
+$('duplicate').onclick = () => clonePatch(selected);
 $('delete').onclick = () => {
   const p = lib.patches[selected];
   const users = lib.patches.filter(q => (q.playlist || []).some(s => s.patch === p.name)).map(q => q.name);
   const extra = users.length ? '\n\nIt will also be taken out of: ' + users.join(', ') : '';
   if (!confirm('Delete ' + p.name + '?' + extra)) return;
   for (const q of lib.patches) if (q.playlist) q.playlist = q.playlist.filter(s => s.patch !== p.name);
+  const next = neighbour(1) >= 0 ? neighbour(1) - 1 : neighbour(-1);
   lib.patches.splice(selected, 1);
-  selected = Math.min(selected, lib.patches.length - 1);
+  selected = next >= 0 ? next : Math.min(selected, lib.patches.length - 1);
   resetPreview();
   changed(true);
 };
 function move(by) {
+  const to = neighbour(by);
   const [p] = lib.patches.splice(selected, 1);
-  selected += by;
+  selected = to;
   lib.patches.splice(selected, 0, p);
   changed(true);
 }
@@ -819,7 +970,7 @@ function tick(now) {
 
     // Library cards play at normal speed, all at the same time
     if (sameShape) {
-      document.querySelectorAll('.card canvas').forEach(c => {
+      document.querySelectorAll('#cards canvas, .chip canvas').forEach(c => {
         const i = Number(c.dataset.index);
         const cardFrame = [];
         Patch.render(set, i, Math.floor(now), cardFrame, ledCount);
@@ -852,6 +1003,7 @@ async function start() {
   $('led-count-hint').textContent = device ? 'The strip has ' + device.leds : '';
   $('history-span').textContent = (HISTORY_ROWS * HISTORY_SAMPLE_MS / 1000) + ' seconds at 1x';
   if (device) selected = Math.min(device.mode, lib.patches.length - 1);
+  tab = isPlaylist(lib.patches[selected]) ? 'playlists' : 'patches';
   // A draft left playing by an earlier visit has nothing to edit it now
   if (device && device.draft) {
     await api('DELETE', '/api/draft').catch(() => {});
