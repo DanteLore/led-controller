@@ -59,6 +59,10 @@
 #define BREAKDOWN_QUIET  0.6f   // ...and quieter than this fraction of the music's level (about -4dB)
 #define BREAKDOWN_BELIEF 0.75f  // ...or belief below this
 #define GROOVE_BELIEF    0.6f   // and only once belief has reached this in the song: no groove, no breakdown
+#define COAST_HIT        0.75f  // while the beat is unclear, only hits this strong against the music's
+                                // kicks count towards belief, so chatter landing on a beat can't fake it...
+#define COAST_PULSE      0.6f   // ...and with belief this high the kicks are still landing on the beat,
+                                // so the lights keep dancing (two tempos overlapping in a mix, say)
 #define LOCK_UPDATES     8      // a beat must be clear for this many updates in a row (2s) before it's
                                 // followed from silence, so a lucky moment of chatter can't start it
 #define COAST_SECONDS    120    // and with no drop for this long, the music has stopped: forget the song
@@ -255,8 +259,9 @@ static void update_belief(void)
     float from_beat = (float)(position - nearest);   // -0.5 to 0.5
     long beat = (long)nearest;
     int newest = ring_index(0);
-    bool hit = (punch_level > 0 && punch_onsets[newest] >= HIT_FRAC * punch_level)
-            || (drum_level > 0 && bass_onsets[newest] >= HIT_FRAC * drum_level);
+    float need = coasting ? COAST_HIT : HIT_FRAC;
+    bool hit = (punch_level > 0 && punch_onsets[newest] >= need * punch_level)
+            || (drum_level > 0 && bass_onsets[newest] >= need * drum_level);
     if (hit && fabsf(from_beat) <= BEAT_WINDOW) {
         if (beat != confirmed_beat) {
             belief += BELIEF_UP * (1 - belief);
@@ -293,11 +298,12 @@ static void update_pulse(void)
     if (!breakdown && grooving && misses >= BREAKDOWN_MISSES
              && ((music_level > 0 && loudness < BREAKDOWN_QUIET * music_level) || belief < BREAKDOWN_BELIEF))
         breakdown = true;
-    // Only dance to an obvious beat: while it's unclear (coasting) the clock
+    // Only dance to an obvious beat: a clear one, or kicks still landing where
+    // the clock expects them. While the beat is unclear (coasting) the clock
     // keeps time, but chatter or the TV landing on a beat now and then can't
     // set the lights going. A real drop makes the beat clear again within a
     // second or so, and the pulse comes straight back.
-    float target = breakdown || holding || coasting ? 0 : 1;
+    float target = breakdown || holding || (coasting && belief < COAST_PULSE) ? 0 : 1;
     pulse_gate = target > pulse_gate ? target : pulse_gate + (target - pulse_gate) * PULSE_FALL;
 }
 
