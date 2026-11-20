@@ -1,0 +1,241 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DANTELORE front panel</title>
+<!--
+  Front panel artwork, drawn 1:1 in millimetres.
+  Regenerate the PDF from the repo root:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer \
+      --print-to-pdf=panel/front-panel.pdf "file://$PWD/panel/front-panel.html"
+  Change the sizes in the P object below; everything else follows.
+-->
+<style>
+  @font-face { font-family: Logo;  src: local("Futura-CondensedExtraBold"); }
+  @font-face { font-family: Label; src: local("Futura-Medium"); }
+  @font-face { font-family: LabelBold; src: local("Futura-Bold"); }
+  @page { size: 297mm 210mm; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  svg { display: block; width: 297mm; height: 210mm; page-break-after: always; }
+  svg:last-child { page-break-after: auto; }
+</style>
+</head>
+<body>
+<body>
+<svg id="art" viewBox="0 0 297 210" xmlns="http://www.w3.org/2000/svg"></svg>
+<svg id="drill" viewBox="0 0 297 210" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+// All sizes in mm. Origin is the panel's top-left corner. Positions measured from the parts, 2026-11-20.
+const P = {
+  w: 160, h: 50,            // finished panel (trim) size
+  bleed: 3,                 // background runs this far past the trim
+  cy: 25,                   // every control sits on this line
+  screen: { x0: 55, x1: 105, h: 25, r: 0.8 },        // visible area = cutout
+  bezel: 2.5,               // printed surround outside the cutout
+  knobHole: 6, toggleHole: 6, micHole: 3,
+  dial: { tick: [8.3, 9.0, 9.6], wedge: [9.85, 10.3], start: 120, sweep: 300 },   // knob caps up to ~16 mm across
+  nut: 4.8,                 // printed ring round each toggle: clears its nut
+  knobs:   [ { x: 28,  name: 'BRIGHTNESS', push: 'PUSH ◂ PREV' },
+             { x: 132, name: 'SPEED',      push: 'PUSH NEXT ▸' } ],
+  toggles: [ { x: 8,   up: 'ON',      down: 'OFF' },
+             { x: 152, up: 'CONNECT', mid: 'PLAY', down: 'EDIT' } ],
+  mic: { x: 152, y: 8 },
+  stripes: { inset: 2, pitch: 1.2, width: 0.8, radius: 5, gap: 30, side: [14.5, 36],   // sides break for the toggles
+             colours: ['#9C3D1C', '#D9701E', '#E6AE34'] },   // outer to inner: rust, orange, mustard
+  logo: { text: 'DANTELORE', size: 6.2, x: 9.4, baseline: 6.9, gap: [8.6, 44.6] },   // sits in a break in the top border
+  url: 'dantelore.com',
+};
+const C = { panel: '#DCC59D', panelEdge: '#CDB386', ink: '#3A2416', soft: '#7A5A3C', hole: '#1E1712' };
+
+const NS = 'http://www.w3.org/2000/svg';
+function el(parent, tag, attrs = {}, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+const label = (g, x, y, s, size = 1.8, extra = {}) =>
+  el(g, 'text', { x, y, 'font-family': 'Label', 'font-size': size, fill: C.ink,
+                  'text-anchor': 'middle', 'letter-spacing': size * 0.16, ...extra }, s);
+
+// One stripe of the frame: a rounded rectangle broken for the logo (top), the URL (bottom) and the toggles (sides).
+function stripePath(i) {
+  const s = P.stripes, d = s.inset + i * s.pitch, r = s.radius - i * s.pitch;
+  const L = d, R = P.w - d, T = d, B = P.h - d, gl = P.w / 2 - s.gap / 2, gr = P.w / 2 + s.gap / 2;
+  const [s0, s1] = s.side;
+  return `M ${L} ${s0} V ${T + r} A ${r} ${r} 0 0 1 ${L + r} ${T} H ${P.logo.gap[0]}
+          M ${P.logo.gap[1]} ${T} H ${R - r} A ${r} ${r} 0 0 1 ${R} ${T + r} V ${s0}
+          M ${R} ${s1} V ${B - r} A ${r} ${r} 0 0 1 ${R - r} ${B} H ${gr}
+          M ${gl} ${B} H ${L + r} A ${r} ${r} 0 0 1 ${L} ${B - r} V ${s1}`;
+}
+
+function crop(g) {
+  const m = 4, o = P.bleed + 1.5;
+  for (const [x, y, sx, sy] of [[0,0,-1,-1],[P.w,0,1,-1],[0,P.h,-1,1],[P.w,P.h,1,1]]) {
+    el(g, 'line', { x1: x + sx * o, y1: y, x2: x + sx * (o + m), y2: y, stroke: '#000', 'stroke-width': 0.2 });
+    el(g, 'line', { x1: x, y1: y + sy * o, x2: x, y2: y + sy * (o + m), stroke: '#000', 'stroke-width': 0.2 });
+  }
+}
+
+function scaleBar(g, x, y) {
+  el(g, 'rect', { x, y, width: 50, height: 1.5, fill: '#000' });
+  for (let i = 0; i <= 5; i++) el(g, 'line', { x1: x + i * 10, y1: y - 1, x2: x + i * 10, y2: y + 2.5, stroke: '#000', 'stroke-width': 0.2 });
+  el(g, 'text', { x: x + 52, y: y + 1.5, 'font-family': 'Label', 'font-size': 2.6, fill: '#000' }, '50 mm: measure this to check the print scale');
+}
+
+function hole(g, x, y, d) {
+  el(g, 'circle', { cx: x, cy: y, r: d / 2, fill: C.hole });
+  const c = Math.min(1, d / 3);
+  el(g, 'line', { x1: x - c, y1: y, x2: x + c, y2: y, stroke: C.panel, 'stroke-width': 0.12 });
+  el(g, 'line', { x1: x, y1: y - c, x2: x, y2: y + c, stroke: C.panel, 'stroke-width': 0.12 });
+}
+
+// A little microphone: capsule, cradle, stem and foot, centred on (x, y), about 4 mm tall.
+function micIcon(g, x, y) {
+  const st = { fill: 'none', stroke: C.ink, 'stroke-width': 0.35, 'stroke-linecap': 'round' };
+  el(g, 'rect', { x: x - 0.75, y: y - 2.1, width: 1.5, height: 2.5, rx: 0.75, fill: C.ink });
+  el(g, 'path', { d: `M ${x - 1.25} ${y - 0.5} A 1.25 1.25 0 0 0 ${x + 1.25} ${y - 0.5}`, ...st });
+  el(g, 'path', { d: `M ${x} ${y + 0.75} V ${y + 1.6} M ${x - 0.8} ${y + 1.6} H ${x + 0.8}`, ...st });
+}
+
+// ---------- page 1: artwork ----------
+function drawArt() {
+  const svg = document.getElementById('art');
+  const ox = (297 - P.w) / 2, oy = 45;
+  const g = el(svg, 'g', { transform: `translate(${ox} ${oy})` });
+
+  const defs = el(svg, 'defs');
+  const grad = el(defs, 'radialGradient', { id: 'paint', cx: '50%', cy: '42%', r: '75%' });
+  el(grad, 'stop', { offset: '0%', 'stop-color': C.panel });
+  el(grad, 'stop', { offset: '100%', 'stop-color': C.panelEdge });
+  const glass = el(defs, 'linearGradient', { id: 'glass', x1: 0, y1: 0, x2: 0, y2: 1 });
+  el(glass, 'stop', { offset: '0%', 'stop-color': '#2A211B' });
+  el(glass, 'stop', { offset: '100%', 'stop-color': '#0E0A08' });
+
+  el(g, 'rect', { x: -P.bleed, y: -P.bleed, width: P.w + 2 * P.bleed, height: P.h + 2 * P.bleed, fill: 'url(#paint)' });
+
+  P.stripes.colours.forEach((c, i) =>
+    el(g, 'path', { d: stripePath(i), fill: 'none', stroke: c, 'stroke-width': P.stripes.width, 'stroke-linecap': 'butt' }));
+
+  // logo: dark letters with a stepped 70s shadow in the stripe colours
+  const lg = el(g, 'g', { transform: `translate(${P.logo.x} ${P.logo.baseline}) skewX(-9)` });
+  const steps = [...P.stripes.colours].reverse(), k = P.logo.size / 14;
+  for (let i = steps.length; i >= 1; i--)
+    el(lg, 'text', { x: i * 0.55 * k, y: i * 0.35 * k, 'font-family': 'Logo', 'font-size': P.logo.size,
+                     'letter-spacing': 0.6 * k, fill: steps[i - 1] }, P.logo.text);
+  el(lg, 'text', { x: 0, y: 0, 'font-family': 'Logo', 'font-size': P.logo.size, 'letter-spacing': 0.6 * k, fill: C.ink }, P.logo.text);
+
+  // url in the gap at the bottom of the frame
+  const B = P.h - P.stripes.inset - P.stripes.pitch;
+  el(g, 'text', { x: P.w / 2, y: B + 0.85, 'font-family': 'Label', 'font-size': 2.3, fill: C.ink,
+                  'text-anchor': 'middle', 'letter-spacing': 0.25 }, P.url);
+
+  // screen: printed bezel, then the dark window that gets cut out
+  const s = P.screen, b = P.bezel, sw = s.x1 - s.x0, top = P.cy - s.h / 2;
+  el(g, 'rect', { x: s.x0 - b, y: top - b, width: sw + 2 * b, height: s.h + 2 * b, rx: 2.2, fill: C.ink });
+  el(g, 'rect', { x: s.x0 - b + 0.8, y: top - b + 0.8, width: sw + 2 * b - 1.6, height: s.h + 2 * b - 1.6, rx: 1.6,
+                  fill: 'none', stroke: P.stripes.colours[2], 'stroke-width': 0.25 });
+  el(g, 'rect', { x: s.x0, y: top, width: sw, height: s.h, rx: s.r, fill: 'url(#glass)' });
+
+  // knobs: a vintage dial scale round each, with the hole in the middle
+  const D = P.dial;
+  for (const kn of P.knobs) {
+    const x = kn.x, y = P.cy;
+    label(g, x, y - 12.6, kn.name, 1.9, { 'font-family': 'LabelBold' });
+    for (let i = 0; i < 21; i++) {
+      const a = (D.start + D.sweep * i / 20) * Math.PI / 180, major = i % 5 === 0;
+      const r1 = major ? D.tick[0] : D.tick[1], r2 = D.tick[2];
+      el(g, 'line', { x1: x + r1 * Math.cos(a), y1: y + r1 * Math.sin(a), x2: x + r2 * Math.cos(a), y2: y + r2 * Math.sin(a),
+                      stroke: C.ink, 'stroke-width': major ? 0.4 : 0.22, 'stroke-linecap': 'round' });
+    }
+    const arc = [];   // a wedge under the ticks that grows from - to +
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60, a = (D.start + D.sweep * t) * Math.PI / 180, r = D.wedge[0] + 0.05 + (D.wedge[1] - D.wedge[0]) * t;
+      arc.push(`${x + r * Math.cos(a)} ${y + r * Math.sin(a)}`);
+    }
+    for (let i = 60; i >= 0; i--) {
+      const a = (D.start + D.sweep * i / 60) * Math.PI / 180;
+      arc.push(`${x + D.wedge[0] * Math.cos(a)} ${y + D.wedge[0] * Math.sin(a)}`);
+    }
+    el(g, 'path', { d: 'M ' + arc.join(' L ') + ' Z', fill: P.stripes.colours[1] });
+    label(g, x - 6.4, y + 11.4, '–', 2.2, { 'letter-spacing': 0 });
+    label(g, x + 6.4, y + 11.4, '+', 2.2, { 'letter-spacing': 0 });
+    label(g, x, y + 15.2, kn.push, 1.5, { fill: C.soft });
+    hole(g, x, y, P.knobHole);
+  }
+
+  // toggles: a ring that clears the nut, and the positions beside it
+  for (const t of P.toggles) {
+    const x = t.x, y = P.cy;
+    el(g, 'circle', { cx: x, cy: y, r: P.nut, fill: 'none', stroke: C.ink, 'stroke-width': 0.3 });
+    label(g, x, y - 7.3, t.up, 1.8);
+    label(g, x, y + 9.0, t.down, 1.8);
+    for (const dy of [-1, 1])   // little arrowheads pointing to each end
+      el(g, 'path', { d: `M ${x - 0.7} ${y + dy * 5.3} L ${x + 0.7} ${y + dy * 5.3} L ${x} ${y + dy * 6.0} Z`, fill: C.ink });
+    if (t.mid) {
+      label(g, x - P.nut - 0.5, y + 0.5, t.mid, 1.4, { 'text-anchor': 'end', 'letter-spacing': 0.08 });
+    }
+    hole(g, x, y, P.toggleHole);
+  }
+
+  // microphone port
+  hole(g, P.mic.x, P.mic.y, P.micHole);
+  micIcon(g, P.mic.x - 4.2, P.mic.y);
+
+  crop(g);
+  scaleBar(svg, ox, oy + P.h + 14);
+  el(svg, 'text', { x: ox, y: oy + P.h + 22, 'font-family': 'Label', 'font-size': 2.6, fill: '#000' },
+     `Print at 100% / actual size. Trim on the crop marks: panel ${P.w} × ${P.h} mm.`);
+  el(svg, 'text', { x: ox, y: oy + P.h + 26.5, 'font-family': 'Label', 'font-size': 2.6, fill: '#000' },
+     'Dark areas are cut out after laminating.');
+}
+
+// ---------- page 2: drilling template for the aluminium ----------
+function drawDrill() {
+  const svg = document.getElementById('drill');
+  const ox = (297 - P.w) / 2, oy = 55;
+  const g = el(svg, 'g', { transform: `translate(${ox} ${oy})` });
+  const line = { fill: 'none', stroke: '#000', 'stroke-width': 0.25 };
+  const dim = (s, x, y, a = 'middle', size = 2) => el(g, 'text', { x, y, 'font-family': 'Label', 'font-size': size, fill: '#000', 'text-anchor': a }, s);
+
+  el(svg, 'text', { x: ox, y: oy - 22, 'font-family': 'LabelBold', 'font-size': 4.5, fill: '#000' }, 'Drilling template');
+  el(svg, 'text', { x: ox, y: oy - 16, 'font-family': 'Label', 'font-size': 2.6, fill: '#000' },
+     'Tape to the aluminium, centre-punch the crosses, drill, then cut the window. Same positions as the artwork.');
+
+  el(g, 'rect', { x: 0, y: 0, width: P.w, height: P.h, ...line });
+  const s = P.screen, top = P.cy - s.h / 2;
+  el(g, 'rect', { x: s.x0, y: top, width: s.x1 - s.x0, height: s.h, rx: s.r, ...line, 'stroke-dasharray': '1 0.6' });
+  dim(`window ${s.x1 - s.x0} × ${s.h}`, (s.x0 + s.x1) / 2, top + s.h - 2);
+  dim(`x ${s.x0}`, s.x0 + 1, top + 3, 'start');
+  dim(`x ${s.x1}`, s.x1 - 1, top + 3, 'end');
+
+  const pts = [...P.knobs.map(k => ({ x: k.x, y: P.cy, d: P.knobHole })), ...P.toggles.map(t => ({ x: t.x, y: P.cy, d: P.toggleHole })),
+               { x: P.mic.x, y: P.mic.y, d: P.micHole, mic: true }];
+  for (const p of pts) {
+    const c = p.d / 2 + 2;
+    el(g, 'circle', { cx: p.x, cy: p.y, r: p.d / 2, ...line });
+    el(g, 'line', { x1: p.x - c, y1: p.y, x2: p.x + c, y2: p.y, ...line, 'stroke-width': 0.15 });
+    el(g, 'line', { x1: p.x, y1: p.y - c, x2: p.x, y2: p.y + c, ...line, 'stroke-width': 0.15 });
+    if (p.mic) dim(`mic Ø${p.d}: x ${p.x}, y ${p.y}`, p.x - 4, p.y + 0.7, 'end');
+    else { dim(`Ø${p.d}`, p.x, p.y + 7.5); dim(`x ${p.x}`, p.x, p.y - 6.5); }
+  }
+  // dimension lines
+  const y0 = P.h + 6;
+  el(g, 'line', { x1: 0, y1: y0, x2: P.w, y2: y0, ...line, 'stroke-width': 0.15 });
+  dim(`${P.w} mm`, P.w / 2, y0 - 1, 'middle', 2.4);
+  el(g, 'line', { x1: P.w + 6, y1: 0, x2: P.w + 6, y2: P.h, ...line, 'stroke-width': 0.15 });
+  el(g, 'text', { x: P.w + 8.5, y: P.h / 2, 'font-family': 'Label', 'font-size': 2.4, fill: '#000' }, `${P.h} mm`);
+  el(g, 'line', { x1: -6, y1: 0, x2: -6, y2: P.cy, ...line, 'stroke-width': 0.15 });
+  el(g, 'text', { x: -7.5, y: P.cy / 2, 'font-family': 'Label', 'font-size': 2.4, fill: '#000', 'text-anchor': 'end' }, `${P.cy}`);
+  el(g, 'line', { x1: -10, y1: P.cy, x2: P.w + 10, y2: P.cy, stroke: '#000', 'stroke-width': 0.1, 'stroke-dasharray': '2 1' });
+  el(svg, 'text', { x: ox, y: oy + P.h + 14, 'font-family': 'Label', 'font-size': 2.6, fill: '#000' },
+     `All controls are centred ${P.cy} mm down from the top edge; x is measured from the left edge.`);
+  scaleBar(svg, ox, oy + P.h + 22);
+}
+
+drawArt();
+drawDrill();
+</script>
+</body>
+</html>
