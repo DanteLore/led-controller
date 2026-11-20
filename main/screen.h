@@ -32,7 +32,3 @@ void screen_mic(float level, float bpm, bool beat_found, float belief, bool brea
 
 // Lines of text down the left, and a QR code on the right if qr_text isn't NULL
 void screen_text(const screen_line_t *lines, int count, const char *qr_text);
-
-// Redraws line i of a text screen of count lines, the full width, without
-// clearing the screen, so values can change without the LEDs stuttering
-void screen_text_line(int count, int i, const char *text, text_style_t style);

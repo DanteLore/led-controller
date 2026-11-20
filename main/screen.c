@@ -149,15 +149,6 @@ static void draw_qr(const char *text)
 
 #define TEXT_WIDE_CHARS 37   // a text line with no QR code beside it
 
-void screen_text_line(int count, int i, const char *text, text_style_t style)
-{
-    static const uint16_t colours[] = { [TEXT_HEADING] = COLOR_CYAN, [TEXT_NORMAL] = COLOR_WHITE, [TEXT_DIM] = COLOR_GREY };
-    char padded[TEXT_WIDE_CHARS + 1];
-    snprintf(padded, sizeof(padded), "%-*s", TEXT_WIDE_CHARS, text);
-    int y = (ST7789_HEIGHT - count * TEXT_LINE_H) / 2 + i * TEXT_LINE_H;
-    st7789_draw_string(TEXT_X, y, padded, colours[style], COLOR_BLACK);
-}
-
 void screen_text(const screen_line_t *lines, int count, const char *qr_text)
 {
     static const uint16_t colours[] = { [TEXT_HEADING] = COLOR_CYAN, [TEXT_NORMAL] = COLOR_WHITE, [TEXT_DIM] = COLOR_GREY };
@@ -185,6 +176,5 @@ void screen_speed(float multiplier, float position) {}
 void screen_preview(const rgb16_t *frame, int count) {}
 void screen_mic(float level, float bpm, bool beat_found, float belief, bool breakdown, bool on_beat) {}
 void screen_text(const screen_line_t *lines, int count, const char *qr_text) {}
-void screen_text_line(int count, int i, const char *text, text_style_t style) {}
 
 #endif

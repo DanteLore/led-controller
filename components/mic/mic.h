@@ -40,11 +40,3 @@ bool mic_record_start(void);
 size_t mic_record_read(int16_t *samples, size_t max, int timeout_ms);
 void mic_record_stop(void);
 bool mic_recording(void);
-float mic_record_seconds(void);   // into the current recording, or -1 if none
-
-// Beats tapped by a person during a recording, as the answer key for tuning.
-// Times are esp_timer microseconds; they're kept as seconds from the
-// recording's first sample, until the next recording starts.
-#define MIC_TAPS_MAX 512
-void mic_record_tap(int64_t when_us);
-int mic_record_taps(float *seconds, int max);
