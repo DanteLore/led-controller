@@ -80,7 +80,8 @@ static uint32_t seconds_to_ms(reader_t *r, const cJSON *item, const char *key)
     return ms == 0 && item->valuedouble > 0 ? 1 : ms;
 }
 
-static const char *const SHAPES[] = { "sine", "triangle", "saw", "square", "noise" };
+static const char *const SHAPES[] = { "sine", "triangle", "saw", "square", "noise", "decay" };
+static const char *const CLOCKS[] = { "time", "beat" };
 
 static void read_osc(reader_t *r, const cJSON *obj, const char *name, patch_osc_t *o)
 {
@@ -88,7 +89,8 @@ static void read_osc(reader_t *r, const cJSON *obj, const char *name, patch_osc_
         fail(r, "%s should be an object", name);
         return;
     }
-    o->shape = choice(r, obj, "shape", SHAPES, 5, SHAPE_SINE);
+    o->shape = choice(r, obj, "shape", SHAPES, 6, SHAPE_SINE);
+    o->beat = choice(r, obj, "clock", CLOCKS, 2, 0) == 1;   // periods then count beats
     const cJSON *period = cJSON_GetObjectItemCaseSensitive(obj, "period");
     if (!period) {
         o->period_min_ms = o->period_max_ms = 1000;

@@ -51,8 +51,9 @@ static float smooth(float f)
 }
 
 // slot keeps a, b and c apart, so the same LED gets different random numbers in each
-static float osc_value(const patch_osc_t *o, int slot, int led, int count, uint32_t ms)
+static float osc_value(const patch_osc_t *o, int slot, int led, int count, uint32_t ms, uint32_t beat_milli)
 {
+    if (o->beat) ms = beat_milli;
     uint32_t h = hash32((uint32_t)led * 3 + slot + 1);
     uint32_t period = o->period_min_ms
                     + (uint32_t)(((uint64_t)(o->period_max_ms - o->period_min_ms) * (h & 0xFFFF)) >> 16);
@@ -73,6 +74,10 @@ static float osc_value(const patch_osc_t *o, int slot, int led, int count, uint3
         case SHAPE_TRIANGLE: return frac < 0.5f ? 2 * frac : 2 - 2 * frac;
         case SHAPE_SAW:      return frac;
         case SHAPE_SQUARE:   return frac < 0.5f ? 0 : 1;
+        case SHAPE_DECAY: {
+            float left = 1 - frac;
+            return left * left * left;
+        }
         default: {
             // A random value at each whole cycle, eased from one to the next
             uint32_t k = cycles + (uint32_t)(int32_t)whole;
@@ -112,20 +117,20 @@ static rgb16_t palette_colour(const patch_t *p, float pos)
     };
 }
 
-static void render_patch(const patch_t *p, uint32_t ms, rgb16_t *frame, int count)
+static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, rgb16_t *frame, int count)
 {
     for (int led = 0; led < count; led++) {
         float glow = 1, level = 1;
         if (p->has_glow) {
-            float mix = osc_value(&p->a, 0, led, count, ms);
+            float mix = osc_value(&p->a, 0, led, count, ms, beat_milli);
             if (p->has_b) {
-                float b = osc_value(&p->b, 1, led, count, ms);
+                float b = osc_value(&p->b, 1, led, count, ms, beat_milli);
                 mix = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
             }
             glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
             level = p->floor + (p->ceiling - p->floor) * glow;
         }
-        float pos = p->colour_by_osc ? osc_value(&p->c, 2, led, count, ms) : glow;
+        float pos = p->colour_by_osc ? osc_value(&p->c, 2, led, count, ms, beat_milli) : glow;
         rgb16_t c = palette_colour(p, pos);
         frame[led] = (rgb16_t){
             (uint16_t)(c.r * level + 0.5f),
@@ -157,16 +162,16 @@ static int find_step(const patch_t *p, uint32_t ms, uint32_t *step_ms)
     return i;
 }
 
-void patch_render(const patch_set_t *set, int index, uint32_t ms, rgb16_t *frame, int count)
+void patch_render(const patch_set_t *set, int index, uint32_t ms, uint32_t beat_milli, rgb16_t *frame, int count)
 {
     if (!tables_ready) make_tables();
     const patch_t *p = &set->patches[index];
     if (p->playlist_count) {
         uint32_t t;
         const patch_step_t *s = &p->playlist[find_step(p, ms, &t)];
-        render_patch(&set->patches[s->patch], step_time(s, t), frame, count);
+        render_patch(&set->patches[s->patch], step_time(s, t), beat_milli, frame, count);
     } else {
-        render_patch(p, ms, frame, count);
+        render_patch(p, ms, beat_milli, frame, count);
     }
 }
 

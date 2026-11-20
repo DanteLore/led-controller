@@ -24,7 +24,7 @@ TESTS = ['RGB TEST', 'DIM TEST']
 LEDS = 10
 
 library = None   # saved JSON text; None = presets
-state = {'mode': 0, 'draft': False, 'brightness': 50, 'speed': 1.0, 'leds': LEDS}
+state = {'mode': 0, 'draft': False, 'brightness': 50, 'speed': 1.0, 'leds': LEDS, 'bpm': 124.0, 'beat_confidence': 0.4, 'beat_found': True}
 
 
 def library_text():

@@ -29,7 +29,7 @@ int main(int argc, char **argv)
     rgb16_t *frame = calloc(count, sizeof(*frame));
     for (int p = 0; p < set.count; p++)
         for (size_t t = 0; t < sizeof(TIMES_MS) / sizeof(TIMES_MS[0]); t++) {
-            patch_render(&set, p, TIMES_MS[t], frame, count);
+            patch_render(&set, p, TIMES_MS[t], TIMES_MS[t] * 2, frame, count);   // beat clock at 120 BPM
             for (int i = 0; i < count; i++)
                 printf("%s %lu %d %u %u %u\n", set.patches[p].name, (unsigned long)TIMES_MS[t], i,
                        frame[i].r, frame[i].g, frame[i].b);

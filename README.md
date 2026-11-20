@@ -25,7 +25,8 @@ led-controller/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
 │   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
-│   ├── mic/             ← INMP441 reader: I2S at 22.05kHz, 60Hz high-pass, level meter
+│   ├── mic/             ← INMP441 reader: I2S at 22.05kHz, 60Hz high-pass, level meter, feeds the beat tracker
+│   ├── beat/            ← beat tracker, plain C; test/run.sh checks it on synthetic tracks and any audio files
 │   ├── qr/              ← minimal QR code encoder for the LCD (versions 2–3, byte mode)
 │   ├── patch/           ← patch engine: patch.c (render), patch_json.c (read), patch.js
 │   │                      (JavaScript copy for the editor), test/run.sh (checks they agree)
@@ -80,6 +81,9 @@ Modes are patches (see **Patches** below), edited from a phone or laptop. The pr
 | Ocean | Blues and teals with waves travelling both ways (new, not yet seen on the strip) |
 | Warm | Steady warm white |
 | Whites | Whole strip easing warm white → cool white → warm over 30s |
+| Beat pulse | Whole strip hits on every beat and fades, a new colour each beat (4-colour cycle) |
+| Beat chase | A pulse runs along the strip once per beat, colours drifting over 16 beats |
+| Beat embers | Embers, with every beat flaring them brighter |
 | Pattern | Ten distinct hues stepping along the strip every 0.5s while the whole strip eases in and out over 4s |
 
 Always after the patches, in C:
@@ -99,6 +103,16 @@ Always after the patches, in C:
 ### Microphone
 
 The mic task runs on core 0 with WiFi, reading 256-sample blocks (about 12ms) at 22.05kHz through a 60Hz Butterworth high-pass, which removes the INMP441's slow offset drift and rumble. It logs both I2S slots' levels once a second; the mic answers in the first slot. Measured 2026-11-20 on the bench: a silent room reads about −70dBFS (the bottom of the MIC bar), speech −40dBFS to −30dBFS. The bench PSU's mains hum shows as small peaks at 100Hz and its multiples. Lit and dark strip measured the same, so LED current doesn't get into the mic wiring. One mic was killed by heat while moving its header; solder quickly, chip side, first time.
+
+### Beat tracking
+
+`components/beat` follows the beat of whatever's playing, from the mic. Each 256-sample hop (86 a second) it takes a 512-point FFT and works out spectral flux: how much the log spectrum rose, summed over all frequencies, which spikes on drum hits and note starts. Every quarter second it autocorrelates the last 6 seconds of that, after taking out the average, to find the tempo between 70 and 180 BPM (a comb over 1, 2 and 3 beats plus a gentle preference for 120 BPM keeps it on the beat rather than half or double). The phase comes from fitting a beat grid to recent onsets, with the bass (below 260Hz) counted double, because off-beat hi-hats would otherwise pull it half a beat out. That steers a free-running beat clock, which never runs backwards and eases out small errors, so patches can land on the beat between onsets.
+
+- It holds (no beat, the clock waits at the end of a beat) below about −55dBFS, or when the rhythm isn't clear: confidence must reach 0.25 to start and stay above 0.15. Steady noise scores about 0.1, music 0.3 to 0.9
+- The LED task reads the beat clock 20ms ahead (`LOOKAHEAD_US` in `mic.c`) to make up for the audio buffer and analysis; tune it by eye
+- The LCD shows the BPM (--- while holding) and a beat dot beside the MIC bar; `/api/state` reports `bpm`, `beat_confidence` and `beat_found`, and the editor's preview runs its beat clock at that tempo (120 BPM while there's no beat)
+- `components/beat/test/run.sh [audio files...]` builds the tracker on the Mac and scores it on synthetic tracks with known beats (house 128, hip-hop 95, drum and bass 174, a 120→140 change, silence then 110, noise only). On 2026-11-20 every synthetic beat after settling was hit within a few milliseconds, and noise never claimed a beat. Audio files given as arguments come back as copies with a click on each detected beat, to listen to
+- Known limits: songs without a steady beat (ambient, rubato), and syncopated music that can lock half a beat out. There's no downbeat (bar) detection yet
 
 ### Patch editor
 
@@ -139,7 +153,7 @@ A patch file is JSON: `{"version": 1, "patches": [...]}`, up to 16 patches and 8
   } }
 ```
 
-- **Oscillator:** `shape` sine | triangle | saw | square | noise (default sine), `period` seconds (default 1; 0 holds still; `[shortest, longest]` gives each LED its own), `phase` start point in cycles, `spread` cycles across the strip (the wave travels; minus goes the other way), `scatter` 0–1 random start point per LED. All give 0–1: sine, triangle and square start at 0 and peak half way; saw ramps up; noise eases between random values once per period
+- **Oscillator:** `shape` sine | triangle | saw | square | noise | decay (default sine), `clock` time | beat (default time: with beat, periods count beats from the mic, so 1 = every beat, 4 = every bar), `period` seconds (default 1; 0 holds still; `[shortest, longest]` gives each LED its own), `phase` start point in cycles, `spread` cycles across the strip (the wave travels; minus goes the other way), `scatter` 0–1 random start point per LED. All give 0–1: sine, triangle and square start at 0 and peak half way; saw ramps up; noise eases between random values once per period; decay jumps to 1 and fades (a cubic curve), like a drum hit
 - **Glow:** a, or a and b blended or multiplied, raised to `power` (above 1 lingers dim), then scaled to `floor`…`ceiling`. That is the LED's brightness
 - **Colour:** with `"source": "glow"` the shaped glow (before floor and ceiling) picks the palette position, so dim LEDs get the first colour. Smooth blends happen in linear light so mixes stay equal-power
 - **Playlist:** `{"name": "Demo", "playlist": [{"patch": "Rainbow", "secs": 30, "speed": [0.5, 10]}, ...]}` plays other patches in turn; `speed` is a number or `[start, end]` for a ramp. Playlists can't play playlists

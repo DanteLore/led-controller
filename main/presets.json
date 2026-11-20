@@ -59,6 +59,44 @@
       }
     },
     {
+      "name": "Beat pulse",
+      "glow": {
+        "a": { "shape": "decay", "clock": "beat", "period": 1 },
+        "floor": 0.03
+      },
+      "colour": {
+        "palette": ["#FF0040", "#00C8FF", "#FFB000", "#8000FF"],
+        "blend": "steps",
+        "source": "osc",
+        "osc": { "shape": "saw", "clock": "beat", "period": 4 }
+      }
+    },
+    {
+      "name": "Beat chase",
+      "glow": {
+        "a": { "shape": "decay", "clock": "beat", "period": 1, "spread": 1 },
+        "power": 1.5,
+        "floor": 0.02
+      },
+      "colour": {
+        "palette": ["#FF0000", "#00FF00", "#0000FF"],
+        "wrap": true,
+        "source": "osc",
+        "osc": { "shape": "saw", "clock": "beat", "period": 16, "spread": 0.3 }
+      }
+    },
+    {
+      "name": "Beat embers",
+      "glow": {
+        "a": { "shape": "sine", "period": [3, 9], "scatter": 1 },
+        "b": { "shape": "decay", "clock": "beat", "period": 1 },
+        "balance": 0.45,
+        "power": 1.6,
+        "floor": 0.12
+      },
+      "colour": { "palette": ["#FF3A00", "#FF940C", "#FFE0A0"], "source": "glow" }
+    },
+    {
       "name": "Warm",
       "colour": { "palette": ["#FF8228"] }
     },

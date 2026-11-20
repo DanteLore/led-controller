@@ -9,8 +9,8 @@ const PATCH_GAMMA = 2.2;
 const PATCH_MAX = 16, PATCH_NAME_MAX = 16, PATCH_PALETTE_MAX = 12, PATCH_PLAYLIST_MAX = 8;
 const PERIOD_MAX_S = 3600;
 const SINE_STEPS = 1024, GAMMA_STEPS = 4096;
-const SHAPES = ['sine', 'triangle', 'saw', 'square', 'noise'];
-const SHAPE_SINE = 0, SHAPE_TRIANGLE = 1, SHAPE_SAW = 2, SHAPE_SQUARE = 3;
+const SHAPES = ['sine', 'triangle', 'saw', 'square', 'noise', 'decay'];
+const SHAPE_SINE = 0, SHAPE_TRIANGLE = 1, SHAPE_SAW = 2, SHAPE_SQUARE = 3, SHAPE_DECAY = 5;
 
 // ---- Rendering (patch.c) --------------------------------------------------
 
@@ -47,7 +47,8 @@ function smooth(f) {
     return f * f * (3 - 2 * f);
 }
 
-function osc_value(o, slot, led, count, ms) {
+function osc_value(o, slot, led, count, ms, beat_milli) {
+    if (o.beat) ms = beat_milli;
     const h = hash32(led * 3 + slot + 1);
     const period = o.period_min_ms + Math.floor((o.period_max_ms - o.period_min_ms) * (h & 0xFFFF) / 65536);
     const start = o.phase + o.spread * led / count + o.scatter * (h >>> 16) / 65536;
@@ -67,6 +68,10 @@ function osc_value(o, slot, led, count, ms) {
         case SHAPE_TRIANGLE: return frac < 0.5 ? 2 * frac : 2 - 2 * frac;
         case SHAPE_SAW:      return frac;
         case SHAPE_SQUARE:   return frac < 0.5 ? 0 : 1;
+        case SHAPE_DECAY: {
+            const left = 1 - frac;
+            return left * left * left;
+        }
         default: {
             const k = (cycles + whole) >>> 0;
             const from = hash32(h ^ hash32(k)) / 4294967296;
@@ -104,19 +109,19 @@ function palette_colour(p, pos) {
     ];
 }
 
-function render_patch(p, ms, frame, count) {
+function render_patch(p, ms, beat_milli, frame, count) {
     for (let led = 0; led < count; led++) {
         let glow = 1, level = 1;
         if (p.has_glow) {
-            let mix = osc_value(p.a, 0, led, count, ms);
+            let mix = osc_value(p.a, 0, led, count, ms, beat_milli);
             if (p.has_b) {
-                const b = osc_value(p.b, 1, led, count, ms);
+                const b = osc_value(p.b, 1, led, count, ms, beat_milli);
                 mix = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;
             }
             glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
             level = p.floor + (p.ceiling - p.floor) * glow;
         }
-        const pos = p.colour_by_osc ? osc_value(p.c, 2, led, count, ms) : glow;
+        const pos = p.colour_by_osc ? osc_value(p.c, 2, led, count, ms, beat_milli) : glow;
         const c = palette_colour(p, pos);
         frame[led] = [
             Math.floor(c[0] * level + 0.5),
@@ -142,15 +147,16 @@ function find_step(p, ms) {
     return { step: i, ms: t };
 }
 
-// Fills frame (an array) for a point in effect time, in ms
-function render(set, index, ms, frame, count) {
+// Fills frame (an array) for a point in effect time, in ms, and on the beat
+// clock, in thousandths of a beat
+function render(set, index, ms, beat_milli, frame, count) {
     const p = set.patches[index];
     if (p.playlist_count) {
         const found = find_step(p, ms);
         const s = p.playlist[found.step];
-        render_patch(set.patches[s.patch], step_time(s, found.ms), frame, count);
+        render_patch(set.patches[s.patch], step_time(s, found.ms), beat_milli, frame, count);
     } else {
-        render_patch(p, ms, frame, count);
+        render_patch(p, ms, beat_milli, frame, count);
     }
 }
 
@@ -205,6 +211,7 @@ function read_osc(r, obj, name) {
     if (!is_object(obj)) r.fail(name + ' should be an object');
     const o = {};
     o.shape = choice(r, obj, 'shape', SHAPES, SHAPE_SINE);
+    o.beat = choice(r, obj, 'clock', ['time', 'beat'], 0) === 1;
     const period = obj.period;
     if (period === undefined) {
         o.period_min_ms = o.period_max_ms = 1000;

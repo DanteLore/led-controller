@@ -19,7 +19,9 @@
 #define PREVIEW_H     22
 #define MIC_Y        139
 #define MIC_BAR_X    (MARGIN_X + 32)
-#define MIC_BAR_W    (BAR_W - 32)
+#define MIC_BAR_W    (BAR_W - 32 - 64)   // leaves room for the BPM and the beat dot
+#define BPM_X        (MIC_BAR_X + MIC_BAR_W + 8)
+#define BEAT_DOT_X   (MARGIN_X + BAR_W - 8)
 #define MIC_BAR_H      6
 #define HINT_Y       152
 #define BAR_W        280
@@ -105,8 +107,13 @@ void screen_preview(const rgb16_t *frame, int count)
     st7789_draw_pixels(MARGIN_X, PREVIEW_Y, BAR_W, PREVIEW_H, buf);
 }
 
-void screen_mic(float level)
+void screen_mic(float level, float bpm, bool beat_found, bool on_beat)
 {
+    char text[8];
+    if (beat_found) snprintf(text, sizeof(text), "%3.0f", bpm);
+    else snprintf(text, sizeof(text), "---");
+    st7789_draw_string(BPM_X, MIC_Y - 1, text, beat_found ? COLOR_WHITE : COLOR_GREY, COLOR_BLACK);
+    st7789_fill_rect(BEAT_DOT_X, MIC_Y - 1, 8, 8, on_beat ? COLOR_YELLOW : RGB565(40, 40, 40));
     int filled = MIC_BAR_W * level;
     if (filled > 0)
         st7789_fill_rect(MIC_BAR_X, MIC_Y, filled, MIC_BAR_H, COLOR_GREEN);
@@ -159,7 +166,7 @@ void screen_patch(const char *name, bool web_draft) {}
 void screen_brightness(int percent) {}
 void screen_speed(float multiplier, float position) {}
 void screen_preview(const rgb16_t *frame, int count) {}
-void screen_mic(float level) {}
+void screen_mic(float level, float bpm, bool beat_found, bool on_beat) {}
 void screen_text(const screen_line_t *lines, int count, const char *qr_text) {}
 
 #endif

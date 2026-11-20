@@ -135,10 +135,11 @@ void control_get_state(control_state_t *out)
     taskEXIT_CRITICAL(&state_lock);
 }
 
-static void publish_state(const settings_t *s, bool draft, float speed)
+static void publish_state(const settings_t *s, bool draft, float speed, const mic_beat_t *beat)
 {
     taskENTER_CRITICAL(&state_lock);
-    state = (control_state_t){ s->mode, draft, s->brightness, speed, LED_COUNT };
+    state = (control_state_t){ s->mode, draft, s->brightness, speed, LED_COUNT,
+                               beat->bpm, beat->confidence, beat->holding };
     taskEXIT_CRITICAL(&state_lock);
 }
 
@@ -400,10 +401,14 @@ static void led_task(void *arg)
         effect_us += (int64_t)((now - last_frame_us) * speed);
         last_frame_us = now;
         uint32_t ms = effect_us / 1000;
+        // The beat clock comes from the music, so the speed knob doesn't touch it
+        mic_beat_t beat;
+        mic_beat(&beat);
+        uint32_t beat_milli = (uint32_t)(uint64_t)(beat.position * 1000);
 
         bool full_scale = false;
         if (show.set) {
-            patch_render(show.set, show.index, ms, frame, LED_COUNT);
+            patch_render(show.set, show.index, ms, beat_milli, frame, LED_COUNT);
             int playing = patch_playlist_step(show.set, show.index, ms);
             if (playing >= 0 && playing != last_step) {
                 const patch_t *p = &show.set->patches[show.index];
@@ -446,13 +451,13 @@ static void led_task(void *arg)
             redraw_patch = redraw_brightness = redraw_speed = false;
             if (++frames % PREVIEW_EVERY == 0) {
                 screen_preview(frame, LED_COUNT);
-                screen_mic(mic_level());
+                screen_mic(mic_level(), beat.bpm, !beat.holding, !beat.holding && beat.position - floor(beat.position) < 0.15);
             }
         } else {
             frames++;
         }
 
-        publish_state(&settings, draft, speed);
+        publish_state(&settings, draft, speed, &beat);
 
         if (now >= next_heartbeat_us) {
             ESP_LOGI(TAG, "Running: %s, brightness %d%%, speed %.2fx, %lu fps",

@@ -28,12 +28,17 @@ typedef struct { uint16_t r, g, b; } rgb16_t;
 #define PATCH_PLAYLIST_MAX  8
 #define PATCH_JSON_MAX   8192   // biggest patch file accepted
 
-typedef enum { SHAPE_SINE, SHAPE_TRIANGLE, SHAPE_SAW, SHAPE_SQUARE, SHAPE_NOISE } patch_shape_t;
+typedef enum { SHAPE_SINE, SHAPE_TRIANGLE, SHAPE_SAW, SHAPE_SQUARE, SHAPE_NOISE, SHAPE_DECAY } patch_shape_t;
 
 // Every oscillator gives 0–1. Sine, triangle and square start at 0 and peak
-// half way through; saw ramps 0 → 1; noise drifts between random values.
+// half way through; saw ramps 0 → 1; noise drifts between random values;
+// decay jumps to 1 and fades, like a drum hit.
+//
+// An oscillator runs on time, or on the beat clock from the microphone, when
+// its periods are in beats rather than seconds (stored ×1000 either way).
 typedef struct {
     patch_shape_t shape;
+    bool beat;                // on the beat clock
     uint32_t period_min_ms;   // 0 = still. A range gives each LED its own period
     uint32_t period_max_ms;
     float phase;              // start point, in cycles
@@ -81,8 +86,9 @@ typedef struct {
 // naming the patch and field, and leaves set in an unspecified state.
 bool patch_parse(const char *json, patch_set_t *set, char *error, size_t error_size);
 
-// Fills the frame for a point in effect time, in ms
-void patch_render(const patch_set_t *set, int index, uint32_t ms, rgb16_t *frame, int count);
+// Fills the frame for a point in effect time, in ms, and on the beat clock,
+// in thousandths of a beat
+void patch_render(const patch_set_t *set, int index, uint32_t ms, uint32_t beat_milli, rgb16_t *frame, int count);
 
 // Which playlist step is playing, or -1 if the patch isn't a playlist
 int patch_playlist_step(const patch_set_t *set, int index, uint32_t ms);

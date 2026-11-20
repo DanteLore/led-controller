@@ -10,6 +10,9 @@ typedef struct {
     int brightness;     // 0–100
     float speed;        // multiplier from the knob, for the mode playing
     int leds;
+    float bpm;          // from the beat tracker
+    float beat_confidence;
+    bool beat_holding;  // no clear beat right now
 } control_state_t;
 
 void control_select(int mode);

@@ -150,6 +150,9 @@ static esp_err_t state_get(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "brightness", s.brightness);
     cJSON_AddNumberToObject(root, "speed", s.speed);
     cJSON_AddNumberToObject(root, "leds", s.leds);
+    cJSON_AddNumberToObject(root, "bpm", s.bpm);
+    cJSON_AddNumberToObject(root, "beat_confidence", s.beat_confidence);
+    cJSON_AddBoolToObject(root, "beat_found", !s.beat_holding);
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!json)

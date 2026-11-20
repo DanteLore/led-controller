@@ -57,7 +57,8 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
   .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .card canvas { width: 100%; height: 22px; border-radius: 4px; background: #000; display: block; }
-  .card .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .card .row { flex-wrap: nowrap; }
   .card .playing { color: var(--good); font-size: 0.8em; }
   #library-actions { margin-top: 10px; }
 
@@ -110,6 +111,7 @@
       <label class="row"><span class="label">Brightness</span>
         <input id="brightness" type="range" min="0" max="100" disabled>
         <span id="brightness-value" class="dim"></span></label>
+      <span id="tempo" class="dim" title="What the mic hears"></span>
       <a href="/wifi">WiFi</a>
     </div>
   </header>
@@ -236,6 +238,7 @@ function showDevice() {
   if (document.activeElement !== b) b.value = device.brightness;
   b.disabled = false;
   $('brightness-value').textContent = device.brightness + '%';
+  $('tempo').textContent = device.beat_found ? Math.round(device.bpm) + ' BPM' : 'no beat';
   // The device stops the draft when its button is pressed
   if (live && !device.draft && Date.now() - liveSince > 4000) setLive(false);
   updateCardStatus();
@@ -461,7 +464,11 @@ function checkbox(text, checked, onchange) {
 
 function oscEditor(title, o) {
   const shape = dropdown(o, 'shape', 'sine',
-    [['sine', 'Sine: smooth'], ['triangle', 'Triangle'], ['saw', 'Saw: ramp up, drop'], ['square', 'Square: on/off'], ['noise', 'Noise: random drift']], false);
+    [['sine', 'Sine: smooth'], ['triangle', 'Triangle'], ['saw', 'Saw: ramp up, drop'], ['square', 'Square: on/off'],
+     ['noise', 'Noise: random drift'], ['decay', 'Decay: hit, then fade']], false);
+  const onBeat = o.clock === 'beat';
+  const clock = dropdown(o, 'clock', 'time', [['time', 'Seconds'], ['beat', 'Beats, from the mic']], true);
+  const unit = onBeat ? ' beats' : ' s';
 
   const ranged = Array.isArray(o.period);
   const periodBox = el('div', { className: 'row' });
@@ -476,8 +483,8 @@ function oscEditor(title, o) {
     };
     return input;
   };
-  if (ranged) periodBox.append(periodInput(0), ' to ', periodInput(1), ' s');
-  else periodBox.append(periodInput(0), ' s');
+  if (ranged) periodBox.append(periodInput(0), ' to ', periodInput(1), unit);
+  else periodBox.append(periodInput(0), unit);
   const randomPeriod = checkbox('Each LED picks its own, in a range', ranged, on => {
     const p = ranged ? o.period[0] : (o.period === undefined ? 1 : o.period);
     o.period = on ? [p, Math.round(p * 300) / 100] : p;
@@ -486,6 +493,7 @@ function oscEditor(title, o) {
 
   return fieldset(title,
     field('Shape', shape),
+    field('Clock', clock, onBeat ? 'Follows the beat the mic hears: 1 = every beat, 4 = every bar' : null),
     field('Period', periodBox, '0 holds still'),
     el('div', { className: 'field' }, el('span'), randomPeriod),
     field('Phase', slider(o, 'phase', 0, 0, 1, 0.01), 'Start point, in cycles'),
@@ -833,6 +841,12 @@ window.addEventListener('beforeunload', e => { if (lib && libText() !== savedTex
 // ---- Preview ---------------------------------------------------------------
 
 let previewMs = 0, lastFrame = performance.now(), nextSample = 0;
+let beatMilli = 0;   // the preview's beat clock, at the strip's tempo; the speed slider doesn't touch it
+
+// The tempo the board hears, or 120 BPM while it hears no beat
+function previewBpm() {
+  return device && device.beat_found && device.bpm > 0 ? device.bpm : 120;
+}
 let historyFill = 0;
 const scopeData = [];   // [first, middle, last] brightness per history sample
 
@@ -958,13 +972,17 @@ function tick(now) {
   if (set && selected < set.count) {
     const sameShape = set.patches.length === lib.patches.length;
     previewMs += dt * speedMultiplier();
+    beatMilli += dt * previewBpm() / 60;
     const ms = Math.floor(previewMs);
-    Patch.render(set, selected, ms, frame, ledCount);
+    const beat = Math.floor(beatMilli);
+    Patch.render(set, selected, ms, beat, frame, ledCount);
     frame.length = ledCount;
     drawStrip($('strip'), frame, true);
     while (nextSample <= previewMs) {
       const sample = [];
-      Patch.render(set, selected, Math.floor(nextSample), sample, ledCount);
+      // History rows are sampled in effect time; their beat clock is worked back from it
+      const behind = (previewMs - nextSample) / speedMultiplier();
+      Patch.render(set, selected, Math.floor(nextSample), Math.floor(beatMilli - behind * previewBpm() / 60), sample, ledCount);
       addHistoryRow(sample);
       nextSample += HISTORY_SAMPLE_MS * speedMultiplier();
     }
@@ -978,7 +996,7 @@ function tick(now) {
       document.querySelectorAll('#cards canvas, .chip canvas').forEach(c => {
         const i = Number(c.dataset.index);
         const cardFrame = [];
-        Patch.render(set, i, Math.floor(now), cardFrame, ledCount);
+        Patch.render(set, i, Math.floor(now), beat, cardFrame, ledCount);
         drawStrip(c, cardFrame, false);
       });
     }

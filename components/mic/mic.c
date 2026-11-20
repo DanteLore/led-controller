@@ -1,4 +1,5 @@
 #include "mic.h"
+#include "beat.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -15,11 +16,19 @@
 #define METER_FALL       0.92f    // per read, so about 1s from full to empty
 #define HIGH_PASS_HZ    60.0f     // below the beat; removes the mic's offset drift and rumble
 #define LOG_US         1000000
+#define MIC_SLOT         0        // the INMP441 answers in the first slot with L/R to GND
+#define LOOKAHEAD_US 20000        // allowance for the audio buffer and analysis; tune by eye
 
 static const char *TAG = "mic";
 
 static i2s_chan_handle_t channel;
 static _Atomic float level;
+
+// The beat clock as of the last hop, and how fast it moves
+static portMUX_TYPE beat_lock = portMUX_INITIALIZER_UNLOCKED;
+static mic_beat_t beat_at;
+static int64_t beat_at_us;
+static double beats_per_us;
 
 // Second-order Butterworth high-pass, one per channel
 typedef struct { float b0, b1, b2, a1, a2, x1, x2, y1, y2; } biquad_t;
@@ -60,10 +69,10 @@ static void reader(void *arg)
     high_pass_init(&filter[0], HIGH_PASS_HZ, MIC_SAMPLE_RATE);
     high_pass_init(&filter[1], HIGH_PASS_HZ, MIC_SAMPLE_RATE);
     float meter = 0;
+    static float hop[FRAMES];
     double energy[2] = {0};
     float peak_db = METER_FLOOR_DB - 30;
     int blocks = 0;
-    int32_t raw_min = INT32_MAX, raw_max = INT32_MIN;   // what arrives, before any maths
     int64_t next_log = esp_timer_get_time() + LOG_US;
 
     while (1) {
@@ -75,11 +84,21 @@ static void reader(void *arg)
         for (int i = 0; i < frames; i++)
             for (int c = 0; c < 2; c++) {
                 int32_t raw = samples[2 * i + c];
-                if (raw < raw_min) raw_min = raw;
-                if (raw > raw_max) raw_max = raw;
                 float ac = high_pass(&filter[c], (float)(raw >> 8));   // 24 bits, left-justified in 32
                 block[c] += ac * ac;
+                if (c == MIC_SLOT) hop[i] = ac / FULL_SCALE;
             }
+        if (frames == BEAT_HOP) {
+            beat_process(hop);
+            beat_state_t st;
+            beat_get(&st);
+            taskENTER_CRITICAL(&beat_lock);
+            beat_at = (mic_beat_t){ st.position, st.bpm, st.confidence, st.holding };
+            beat_at_us = esp_timer_get_time();
+            beats_per_us = st.bpm / 60e6;
+            taskEXIT_CRITICAL(&beat_lock);
+        }
+
         float rms = sqrtf((block[0] > block[1] ? block[0] : block[1]) / frames);
         float db = to_db(rms);
         float target = (db - METER_FLOOR_DB) / (METER_TOP_DB - METER_FLOOR_DB);
@@ -94,11 +113,12 @@ static void reader(void *arg)
 
         int64_t now = esp_timer_get_time();
         if (now >= next_log) {
-            ESP_LOGI(TAG, "Level: first slot %.0fdB, second slot %.0fdB, loudest moment %.0fdB, raw %08lx to %08lx",
-                     to_db(sqrtf(energy[0] / blocks)), to_db(sqrtf(energy[1] / blocks)), peak_db,
-                     (unsigned long)raw_min, (unsigned long)raw_max);
-            raw_min = INT32_MAX;
-            raw_max = INT32_MIN;
+            mic_beat_t b;
+            mic_beat(&b);
+            ESP_LOGI(TAG, "Level %.0fdB (other slot %.0fdB), loudest %.0fdB; beat %.1f BPM, confidence %.2f%s",
+                     to_db(sqrtf(energy[MIC_SLOT] / blocks)), to_db(sqrtf(energy[1 - MIC_SLOT] / blocks)), peak_db,
+                     b.bpm, b.confidence, b.holding ? ", holding" : "");
+
             energy[0] = energy[1] = 0;
             peak_db = METER_FLOOR_DB - 30;
             blocks = 0;
@@ -128,6 +148,7 @@ void mic_start(int pin_sck, int pin_ws, int pin_sd, int core)
     };
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(channel, &cfg));
     ESP_ERROR_CHECK(i2s_channel_enable(channel));
+    beat_init(MIC_SAMPLE_RATE);
     xTaskCreatePinnedToCore(reader, "mic", 4096, NULL, 5, NULL, core);
     ESP_LOGI(TAG, "Listening at %dHz", MIC_SAMPLE_RATE);
 }
@@ -135,4 +156,18 @@ void mic_start(int pin_sck, int pin_ws, int pin_sd, int core)
 float mic_level(void)
 {
     return atomic_load(&level);
+}
+
+void mic_beat(mic_beat_t *beat)
+{
+    taskENTER_CRITICAL(&beat_lock);
+    *beat = beat_at;
+    int64_t since = esp_timer_get_time() - beat_at_us + LOOKAHEAD_US;
+    double rate = beats_per_us;
+    taskEXIT_CRITICAL(&beat_lock);
+    double next = beat->position + since * rate;
+    // While holding, don't run on into the next beat
+    if (beat->holding && floor(next) != floor(beat->position))
+        next = floor(next) - 1e-6;
+    beat->position = next;
 }
