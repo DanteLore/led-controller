@@ -41,7 +41,6 @@ typedef struct {
     bool breakdown;     // the music has gone quiet and the beat has faded: keep time, don't move
     float pulse;        // 0–1: how hard the lights should pulse on the beat now: the energy, bolder
                         // with belief, and nothing in a breakdown
-    float onset;        // latest onset strength, for meters
 } beat_state_t;
 
 void beat_init(float sample_rate);

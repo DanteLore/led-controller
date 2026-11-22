@@ -138,33 +138,46 @@ static float blend(const patch_t *p, float a, float b, float energy)
     return (wa * a + wb * b) / (wa + wb);
 }
 
+typedef struct {
+    float glow;    // 0–1, from the oscillators
+    float level;   // brightness, between the floor and ceiling
+    float heat;    // see below
+} glow_t;
+
+static glow_t glow_at(const patch_t *p, int led, int count, uint32_t ms, uint32_t beat_milli, float energy)
+{
+    if (!p->has_glow) return (glow_t){ 1, 1, 1 };
+    float mix = glow_value(&p->a, 0, led, count, ms, beat_milli, energy);
+    float heat = mix;
+    if (p->has_b) {
+        float b = glow_value(&p->b, 1, led, count, ms, beat_milli, energy);
+        // Heat keeps the beat's share even with no beat, so the free
+        // oscillator only climbs its own share of the palette and the
+        // beat takes it the rest of the way: embers stay orange to
+        // yellow in a quiet room and burn white hot on the beat
+        heat = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
+        mix = p->multiply ? mix * b : blend(p, mix, b, energy);
+    }
+    float glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
+    return (glow_t){ glow, p->floor + (p->ceiling - p->floor) * glow, heat };
+}
+
+static rgb16_t scaled(rgb16_t c, float level)
+{
+    return (rgb16_t){
+        (uint16_t)(c.r * level + 0.5f),
+        (uint16_t)(c.g * level + 0.5f),
+        (uint16_t)(c.b * level + 0.5f),
+    };
+}
+
 static void render_patch(const patch_t *p, uint32_t ms, uint32_t beat_milli, float energy, rgb16_t *frame, int count)
 {
     for (int led = 0; led < count; led++) {
-        float glow = 1, level = 1, heat = 1;
-        if (p->has_glow) {
-            float mix = glow_value(&p->a, 0, led, count, ms, beat_milli, energy);
-            heat = mix;
-            if (p->has_b) {
-                float b = glow_value(&p->b, 1, led, count, ms, beat_milli, energy);
-                // Heat keeps the beat's share even with no beat, so the free
-                // oscillator only climbs its own share of the palette and the
-                // beat takes it the rest of the way: embers stay orange to
-                // yellow in a quiet room and burn white hot on the beat
-                heat = p->multiply ? mix * b : p->balance * mix + (1 - p->balance) * b;
-                mix = p->multiply ? mix * b : blend(p, mix, b, energy);
-            }
-            glow = p->power == 1 ? mix : p->power == 2 ? mix * mix : powf(mix, p->power);
-            level = p->floor + (p->ceiling - p->floor) * glow;
-        }
+        glow_t g = glow_at(p, led, count, ms, beat_milli, energy);
         float pos = p->colour_by_osc ? osc_value(&p->c, 2, led, count, ms, beat_milli)
-                  : p->colour_by_heat ? heat : glow;
-        rgb16_t c = palette_colour(p, pos);
-        frame[led] = (rgb16_t){
-            (uint16_t)(c.r * level + 0.5f),
-            (uint16_t)(c.g * level + 0.5f),
-            (uint16_t)(c.b * level + 0.5f),
-        };
+                  : p->colour_by_heat ? g.heat : g.glow;
+        frame[led] = scaled(palette_colour(p, pos), g.level);
     }
 }
 

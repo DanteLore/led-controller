@@ -117,7 +117,7 @@ Free on this board, not a strapping pin, and not shared with the LCD's SPI pins 
 
 Used while the LCD board's parts are on order. 30-pin NodeMCU-style DevKit V1: ESP32-WROOM-32, CP2102 USB-serial, AMS1117 3.3V regulator, USB-C. Same layout as the AITRIP channel board in bt-mixer.
 
-This is the default `BOARD` in `flash.sh`. It turns off `CONFIG_LED_CONTROLLER_LCD`, so mode and brightness changes are logged to the serial monitor instead of drawn on a screen. Pin numbers are the same as the LCD board, so `main.c` doesn't change.
+This is the default `BOARD` in `flash.sh`. It turns off `CONFIG_LED_CONTROLLER_LCD`, so mode and brightness changes are logged to the serial monitor instead of drawn on a screen. Pin numbers are the same as the LCD board, so `board.h` doesn't change.
 
 | Header label | GPIO | Connect to |
 |---|---|---|
@@ -138,7 +138,7 @@ This is the default `BOARD` in `flash.sh`. It turns off `CONFIG_LED_CONTROLLER_L
 ## LED Strip — SM16703SP3, 24V
 
 - WS2811-compatible single-wire protocol; each chip takes the first 24 bits and passes the rest on, so there is no fixed addressing and a cut strip works from whichever end receives data.
-- On 24V strips each chip usually drives a group of 6 LEDs. `LED_COUNT` in `main.c` is the number of **chips**, not LEDs.
+- On 24V strips each chip usually drives a group of 6 LEDs. `LED_COUNT` in `board.h` is the number of **chips**, not LEDs.
 - Colour order varies by strip maker. Use the RGB TEST mode: the strip should show red, green, blue thirds in that order. If not, change `LED_ORDER`.
 - Data flows in the direction of the arrows printed on the strip — connect to the end the arrows point away from.
 - Solder to the three pads at a cut line (24V, DIN, GND). A segment cut off-line may be dead; leave it out of `LED_COUNT`.

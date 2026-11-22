@@ -15,18 +15,29 @@ led-controller/
 ├── sdkconfig.defaults
 ├── sdkconfig.devkit     ← extra defaults for the DevKit V1 (LCD off)
 ├── main/
-│   ├── main.c           ← UI, main loop, output
+│   ├── main.c           ← startup and the LED task's frame loop
+│   ├── board.h          ← pin assignments, LED_COUNT and LED_ORDER
+│   ├── player.c/h       ← what's playing: mode, draft, brightness, speed, effect clock, render
+│   ├── inputs.c/h       ← knobs, buttons and mode switch, debounced
+│   ├── ui.c/h           ← what the LCD shows for each switch position
+│   ├── screen.c/h       ← LCD layout and drawing
+│   ├── control.c/h      ← web server ↔ LED task: commands in, state and timing out
+│   ├── frame_stats.c/h  ← LED task stage timing for /api/cpu and the log
 │   ├── presets.json     ← built-in patch library, compiled in
 │   ├── library.c/h      ← the patch library: saved in NVS, or the presets; the editor's draft
-│   ├── web.c/h          ← patch editor page (editor.html) and its JSON API
-│   ├── effects.c/h      ← RGB TEST and DIM TEST, kept in C
+│   ├── web.c/h          ← patch editor page and its JSON API
+│   ├── editor.html/.css ← the editor page; editor.js (state, cards, actions),
+│   │                      editor-forms.js (patch forms), editor-preview.js (strip preview)
+│   ├── test_patterns.c/h ← RGB TEST and DIM TEST, kept in C
 │   └── Kconfig.projbuild ← LED_CONTROLLER_LCD option
 ├── components/
 │   ├── led_strip/       ← RMT-driven WS2811-protocol driver
 │   ├── st7789/          ← LCD driver (from bt-mixer)
 │   ├── encoder/         ← KY-040 quadrature ISR (from bt-mixer)
 │   ├── mic/             ← INMP441 reader: I2S at 22.05kHz, 60Hz high-pass, level meter, feeds the beat tracker
-│   ├── beat/            ← beat tracker, plain C; test/run.sh checks it on synthetic tracks and any audio files
+│   ├── beat/            ← beat tracker, plain C: spectrum.c (FFT, flux), band.c (onsets per band),
+│   │                      fit.c (tempo and phase fitting), beat.c (locking, belief, breakdowns, clock);
+│   │                      test/run.sh checks it on synthetic tracks and any audio files
 │   ├── qr/              ← minimal QR code encoder for the LCD (versions 2–3, byte mode)
 │   ├── patch/           ← patch engine: patch.c (render), patch_json.c (read), patch.js
 │   │                      (JavaScript copy for the editor), test/run.sh (checks they agree)
@@ -66,7 +77,7 @@ See HARDWARE.md for full details.
 
 Developing on an HW-463C ESP32 DevKit V1 with a 10-LED test strip (2026-11-18). Direct 3.3V data (D13 → 330Ω → DIN) works: RGB TEST shows red, green, blue thirds, and everything runs at a steady 200fps. With the 74AHCT125 in circuit the first pixel flickered and the rest froze, so the shifter has been left out for now; direct 3.3V is the working setup. The KY-040 encoder is connected (CLK D33, DT D27, SW D14, + 3V3). `LED_ORDER` (BRG) is confirmed correct on this strip. The diymore LCD board is waiting on a replacement screen; the `lcd` build compiles but hasn't run on hardware.
 
-- **Left knob:** brightness; press for the previous patch. **Right knob:** speed; press for the next patch. Patches come in library order, then RGB TEST and DIM TEST, and each starts from its beginning. `STARTUP_MODE` in `main.c` picks the first.
+- **Left knob:** brightness; press for the previous patch. **Right knob:** speed; press for the next patch. Patches come in library order, then RGB TEST and DIM TEST, and each starts from its beginning. The library's `"default"` picks the first.
 - **Mode switch:** **Setup** (A) shows the address as a QR code, or while the setup hotspot is up a WiFi QR code that joins it. **Play** (middle) is the normal screen. **Edit** (B) is a placeholder for editing patches on the device (text only, no QR code, so it can't be mistaken for Setup). The strip keeps playing in all three
 
 Modes are patches (see **Patches** below), edited from a phone or laptop. The presets:
@@ -98,7 +109,7 @@ Always after the patches, in C:
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
 - LCD (Play) shows the patch, brightness and speed (each with a bar), a live preview of the strip, and a MIC level bar. The title line shows the board's address once joined, or WIFI SETUP while the hotspot is up
 - **QR codes:** only in Setup, so Play's screen is never covered
-- Settings are compile-time `#define`s at the top of `main.c`: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER`, `HOSTNAME`
+- Settings are compile-time `#define`s: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER` in `board.h`; `HOSTNAME` in `main.c`
 
 ### Microphone
 

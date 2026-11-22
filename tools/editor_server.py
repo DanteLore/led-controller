@@ -14,6 +14,10 @@ from urllib.parse import urlparse, parse_qs
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FILES = {
     '/': (ROOT / 'main/editor.html', 'text/html'),
+    '/editor.css': (ROOT / 'main/editor.css', 'text/css'),
+    '/editor.js': (ROOT / 'main/editor.js', 'text/javascript'),
+    '/editor-forms.js': (ROOT / 'main/editor-forms.js', 'text/javascript'),
+    '/editor-preview.js': (ROOT / 'main/editor-preview.js', 'text/javascript'),
     '/patch.js': (ROOT / 'components/patch/patch.js', 'text/javascript'),
     '/api/presets': (ROOT / 'main/presets.json', 'application/json'),
     '/wifi': (ROOT / 'components/wifi/setup.html', 'text/html'),

@@ -124,28 +124,33 @@ function blend(p, a, b, energy) {
     return (wa * a + wb * b) / (wa + wb);
 }
 
+function glow_at(p, led, count, ms, beat_milli, energy) {
+    if (!p.has_glow) return { glow: 1, level: 1, heat: 1 };
+    let mix = glow_value(p.a, 0, led, count, ms, beat_milli, energy);
+    let heat = mix;
+    if (p.has_b) {
+        const b = glow_value(p.b, 1, led, count, ms, beat_milli, energy);
+        heat = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;   // see patch.c
+        mix = p.multiply ? mix * b : blend(p, mix, b, energy);
+    }
+    const glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
+    return { glow, level: p.floor + (p.ceiling - p.floor) * glow, heat };
+}
+
+function scaled(c, level) {
+    return [
+        Math.floor(c[0] * level + 0.5),
+        Math.floor(c[1] * level + 0.5),
+        Math.floor(c[2] * level + 0.5),
+    ];
+}
+
 function render_patch(p, ms, beat_milli, energy, frame, count) {
     for (let led = 0; led < count; led++) {
-        let glow = 1, level = 1, heat = 1;
-        if (p.has_glow) {
-            let mix = glow_value(p.a, 0, led, count, ms, beat_milli, energy);
-            heat = mix;
-            if (p.has_b) {
-                const b = glow_value(p.b, 1, led, count, ms, beat_milli, energy);
-                heat = p.multiply ? mix * b : p.balance * mix + (1 - p.balance) * b;   // see patch.c
-                mix = p.multiply ? mix * b : blend(p, mix, b, energy);
-            }
-            glow = p.power === 1 ? mix : p.power === 2 ? mix * mix : Math.pow(mix, p.power);
-            level = p.floor + (p.ceiling - p.floor) * glow;
-        }
+        const g = glow_at(p, led, count, ms, beat_milli, energy);
         const pos = p.colour_by_osc ? osc_value(p.c, 2, led, count, ms, beat_milli)
-                  : p.colour_by_heat ? heat : glow;
-        const c = palette_colour(p, pos);
-        frame[led] = [
-            Math.floor(c[0] * level + 0.5),
-            Math.floor(c[1] * level + 0.5),
-            Math.floor(c[2] * level + 0.5),
-        ];
+                  : p.colour_by_heat ? g.heat : g.glow;
+        frame[led] = scaled(palette_colour(p, pos), g.level);
     }
 }
 
@@ -296,34 +301,41 @@ function find_patch(patches, name) {
     return patches.findIndex(p => is_object(p) && p.name === name);
 }
 
+function read_speed(r, speed, number, s) {
+    s.speed_from = s.speed_to = 1;
+    if (is_number(speed)) {
+        s.speed_from = s.speed_to = speed;
+    } else if (Array.isArray(speed) && speed.length === 2 && is_number(speed[0]) && is_number(speed[1])) {
+        s.speed_from = speed[0];
+        s.speed_to = speed[1];
+    } else if (speed !== undefined) {
+        r.fail('playlist step ' + number + ' speed should be a number or [from, to]');
+    }
+    if (s.speed_from < 0 || s.speed_to < 0 || s.speed_from > 100 || s.speed_to > 100)
+        r.fail('playlist step ' + number + ' speed should be from 0 to 100');
+}
+
+function read_step_patch(r, step, number, patches) {
+    if (!has(step, 'patch') || typeof step.patch !== 'string') r.fail('playlist step ' + number + ' needs a patch name');
+    const target = find_patch(patches, step.patch);
+    if (target < 0) r.fail('playlist plays "' + step.patch + '", which isn\'t in the file');
+    if (has(patches[target], 'playlist')) r.fail('playlist plays "' + step.patch + '", which is a playlist itself');
+    return target;
+}
+
+function read_step(r, step, number, patches) {
+    const s = { patch: read_step_patch(r, step, number, patches) };
+    s.ms = has(step, 'secs') ? seconds_to_ms(r, step.secs, 'secs') : 0;
+    if (s.ms === 0) r.fail('playlist step ' + number + ' needs secs above 0');
+    read_speed(r, step.speed, number, s);
+    return s;
+}
+
 function read_playlist(r, list, patches, p) {
     if (!Array.isArray(list) || list.length < 1 || list.length > PATCH_PLAYLIST_MAX)
         r.fail('playlist should have 1 to ' + PATCH_PLAYLIST_MAX + ' steps');
     p.playlist_count = list.length;
-    p.playlist = list.map((step, i) => {
-        const s = {};
-        if (!has(step, 'patch') || typeof step.patch !== 'string') r.fail('playlist step ' + (i + 1) + ' needs a patch name');
-        const target = find_patch(patches, step.patch);
-        if (target < 0) r.fail('playlist plays "' + step.patch + '", which isn\'t in the file');
-        if (has(patches[target], 'playlist')) r.fail('playlist plays "' + step.patch + '", which is a playlist itself');
-        s.patch = target;
-        s.ms = has(step, 'secs') ? seconds_to_ms(r, step.secs, 'secs') : 0;
-        if (s.ms === 0) r.fail('playlist step ' + (i + 1) + ' needs secs above 0');
-
-        const speed = step.speed;
-        s.speed_from = s.speed_to = 1;
-        if (is_number(speed)) {
-            s.speed_from = s.speed_to = speed;
-        } else if (Array.isArray(speed) && speed.length === 2 && is_number(speed[0]) && is_number(speed[1])) {
-            s.speed_from = speed[0];
-            s.speed_to = speed[1];
-        } else if (speed !== undefined) {
-            r.fail('playlist step ' + (i + 1) + ' speed should be a number or [from, to]');
-        }
-        if (s.speed_from < 0 || s.speed_to < 0 || s.speed_from > 100 || s.speed_to > 100)
-            r.fail('playlist step ' + (i + 1) + ' speed should be from 0 to 100');
-        return s;
-    });
+    p.playlist = list.map((step, i) => read_step(r, step, i + 1, patches));
 }
 
 function read_patch(r, obj, patches) {
@@ -352,6 +364,25 @@ function utf8_length(s) {
     return new TextEncoder().encode(s).length;
 }
 
+function read_patches(r, patches, set) {
+    patches.forEach((obj, i) => {
+        r.where = 'patch ' + (i + 1);
+        const p = read_patch(r, obj, patches);
+        if (set.patches.some(q => q.name === p.name)) r.fail('two patches have this name');
+        set.patches.push(p);
+    });
+}
+
+// "default": the patch to start on at boot
+function read_default(r, root, patches, set) {
+    r.where = 'file';
+    set.startup = 0;
+    if (!has(root, 'default')) return;
+    if (typeof root.default !== 'string') r.fail('default should be a patch name');
+    set.startup = find_patch(patches, root.default);
+    if (set.startup < 0) r.fail('default is "' + root.default + '", which isn\'t in the file');
+}
+
 // Takes the parsed JSON object (not text). Throws PatchError with the same
 // messages as the device.
 function parse(root) {
@@ -360,20 +391,8 @@ function parse(root) {
     if (!Array.isArray(patches) || patches.length < 1 || patches.length > PATCH_MAX)
         r.fail('should have a "patches" list of 1 to ' + PATCH_MAX + ' patches');
     const set = { count: patches.length, patches: [] };
-    patches.forEach((obj, i) => {
-        r.where = 'patch ' + (i + 1);
-        const p = read_patch(r, obj, patches);
-        if (set.patches.some(q => q.name === p.name)) r.fail('two patches have this name');
-        set.patches.push(p);
-    });
-    // "default": the patch to start on at boot
-    r.where = 'file';
-    set.startup = 0;
-    if (has(root, 'default')) {
-        if (typeof root.default !== 'string') r.fail('default should be a patch name');
-        set.startup = find_patch(patches, root.default);
-        if (set.startup < 0) r.fail('default is "' + root.default + '", which isn\'t in the file');
-    }
+    read_patches(r, patches, set);
+    read_default(r, root, patches, set);
     return set;
 }
 

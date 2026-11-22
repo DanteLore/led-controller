@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")"
 OUT="${OUT:-$(mktemp -d)}"
-cc -std=c11 -O2 -Wall -Wextra -Werror -I.. ../beat.c beats.c -lm -o "$OUT/beats"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I.. ../beat.c ../band.c ../fit.c ../spectrum.c beats.c -lm -o "$OUT/beats"
 python3 make_tracks.py "$OUT"
 for track in "$OUT"/*.beats; do
     name="${track%.beats}"

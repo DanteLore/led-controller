@@ -189,7 +189,7 @@ httpd_handle_t setup_page_start(const char *setup_url)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.core_id = 0;               // core 1 is kept for the LEDs
     config.lru_purge_enable = true;   // phones open lots of connections while probing
-    config.max_uri_handlers = 20;     // room for the patch editor's routes too
+    config.max_uri_handlers = 24;     // room for the patch editor's routes too
     ESP_ERROR_CHECK(httpd_start(&server, &config));
 
     add(server, "/wifi",        HTTP_GET,  page_get);

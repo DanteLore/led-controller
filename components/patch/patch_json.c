@@ -206,6 +206,53 @@ static int find_patch(const cJSON *patches, const char *name)
     return -1;
 }
 
+static void read_speed(reader_t *r, const cJSON *speed, int number, patch_step_t *s)
+{
+    s->speed_from = s->speed_to = 1;
+    if (cJSON_IsNumber(speed)) {
+        s->speed_from = s->speed_to = speed->valuedouble;
+    } else if (cJSON_IsArray(speed) && cJSON_GetArraySize(speed) == 2
+               && cJSON_IsNumber(cJSON_GetArrayItem(speed, 0)) && cJSON_IsNumber(cJSON_GetArrayItem(speed, 1))) {
+        s->speed_from = cJSON_GetArrayItem(speed, 0)->valuedouble;
+        s->speed_to = cJSON_GetArrayItem(speed, 1)->valuedouble;
+    } else if (speed) {
+        fail(r, "playlist step %d speed should be a number or [from, to]", number);
+    }
+    if (s->speed_from < 0 || s->speed_to < 0 || s->speed_from > 100 || s->speed_to > 100)
+        fail(r, "playlist step %d speed should be from 0 to 100", number);
+}
+
+// The patch a step plays: one in the file, and not a playlist itself. -1 if not.
+static int read_step_patch(reader_t *r, const cJSON *step, int number, const cJSON *patches)
+{
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(step, "patch");
+    if (!cJSON_IsString(name)) {
+        fail(r, "playlist step %d needs a patch name", number);
+        return -1;
+    }
+    int target = find_patch(patches, name->valuestring);
+    if (target < 0) {
+        fail(r, "playlist plays \"%s\", which isn't in the file", name->valuestring);
+        return -1;
+    }
+    if (cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(patches, target), "playlist")) {
+        fail(r, "playlist plays \"%s\", which is a playlist itself", name->valuestring);
+        return -1;
+    }
+    return target;
+}
+
+static void read_step(reader_t *r, const cJSON *step, int number, const cJSON *patches, patch_step_t *s)
+{
+    int target = read_step_patch(r, step, number, patches);
+    if (target < 0) return;
+    s->patch = target;
+    const cJSON *secs = cJSON_GetObjectItemCaseSensitive(step, "secs");
+    s->ms = secs ? seconds_to_ms(r, secs, "secs") : 0;
+    if (s->ms == 0) fail(r, "playlist step %d needs secs above 0", number);
+    read_speed(r, cJSON_GetObjectItemCaseSensitive(step, "speed"), number, s);
+}
+
 static void read_playlist(reader_t *r, const cJSON *list, const cJSON *patches, patch_t *p)
 {
     int n = cJSON_GetArraySize(list);
@@ -214,42 +261,8 @@ static void read_playlist(reader_t *r, const cJSON *list, const cJSON *patches, 
         return;
     }
     p->playlist_count = n;
-    for (int i = 0; i < n; i++) {
-        const cJSON *step = cJSON_GetArrayItem(list, i);
-        patch_step_t *s = &p->playlist[i];
-        const cJSON *name = cJSON_GetObjectItemCaseSensitive(step, "patch");
-        if (!cJSON_IsString(name)) {
-            fail(r, "playlist step %d needs a patch name", i + 1);
-            return;
-        }
-        int target = find_patch(patches, name->valuestring);
-        if (target < 0) {
-            fail(r, "playlist plays \"%s\", which isn't in the file", name->valuestring);
-            return;
-        }
-        if (cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(patches, target), "playlist")) {
-            fail(r, "playlist plays \"%s\", which is a playlist itself", name->valuestring);
-            return;
-        }
-        s->patch = target;
-        const cJSON *secs = cJSON_GetObjectItemCaseSensitive(step, "secs");
-        s->ms = secs ? seconds_to_ms(r, secs, "secs") : 0;
-        if (s->ms == 0) fail(r, "playlist step %d needs secs above 0", i + 1);
-
-        const cJSON *speed = cJSON_GetObjectItemCaseSensitive(step, "speed");
-        s->speed_from = s->speed_to = 1;
-        if (cJSON_IsNumber(speed)) {
-            s->speed_from = s->speed_to = speed->valuedouble;
-        } else if (cJSON_IsArray(speed) && cJSON_GetArraySize(speed) == 2
-                   && cJSON_IsNumber(cJSON_GetArrayItem(speed, 0)) && cJSON_IsNumber(cJSON_GetArrayItem(speed, 1))) {
-            s->speed_from = cJSON_GetArrayItem(speed, 0)->valuedouble;
-            s->speed_to = cJSON_GetArrayItem(speed, 1)->valuedouble;
-        } else if (speed) {
-            fail(r, "playlist step %d speed should be a number or [from, to]", i + 1);
-        }
-        if (s->speed_from < 0 || s->speed_to < 0 || s->speed_from > 100 || s->speed_to > 100)
-            fail(r, "playlist step %d speed should be from 0 to 100", i + 1);
-    }
+    for (int i = 0; i < n && !r->failed; i++)
+        read_step(r, cJSON_GetArrayItem(list, i), i + 1, patches, &p->playlist[i]);
 }
 
 static void read_patch(reader_t *r, const cJSON *obj, const cJSON *patches, patch_t *p)
@@ -276,6 +289,36 @@ static void read_patch(reader_t *r, const cJSON *obj, const cJSON *patches, patc
     else read_colour(r, colour, p);
 }
 
+static void read_patches(reader_t *r, const cJSON *patches, patch_set_t *set)
+{
+    set->count = cJSON_GetArraySize(patches);
+    for (int i = 0; i < set->count && !r->failed; i++) {
+        char where[24];
+        snprintf(where, sizeof(where), "patch %d", i + 1);
+        r->where = where;
+        read_patch(r, cJSON_GetArrayItem(patches, i), patches, &set->patches[i]);
+        for (int j = 0; j < i && !r->failed; j++)
+            if (strcmp(set->patches[j].name, set->patches[i].name) == 0)
+                fail(r, "two patches have this name");
+    }
+}
+
+// "default": the patch to start on at boot
+static void read_default(reader_t *r, const cJSON *root, const cJSON *patches, patch_set_t *set)
+{
+    const cJSON *start = cJSON_GetObjectItemCaseSensitive(root, "default");
+    set->startup = 0;
+    r->where = "file";
+    if (r->failed || !start)
+        return;
+    if (!cJSON_IsString(start)) {
+        fail(r, "default should be a patch name");
+        return;
+    }
+    set->startup = find_patch(patches, start->valuestring);
+    if (set->startup < 0) fail(r, "default is \"%s\", which isn't in the file", start->valuestring);
+}
+
 bool patch_parse(const char *json, patch_set_t *set, char *error, size_t error_size)
 {
     reader_t r = { .error = error, .size = error_size, .where = "file" };
@@ -287,28 +330,8 @@ bool patch_parse(const char *json, patch_set_t *set, char *error, size_t error_s
     } else if (!cJSON_IsArray(patches) || n < 1 || n > PATCH_MAX) {
         fail(&r, "should have a \"patches\" list of 1 to %d patches", PATCH_MAX);
     } else {
-        set->count = n;
-        for (int i = 0; i < n && !r.failed; i++) {
-            char where[24];
-            snprintf(where, sizeof(where), "patch %d", i + 1);
-            r.where = where;
-            read_patch(&r, cJSON_GetArrayItem(patches, i), patches, &set->patches[i]);
-            for (int j = 0; j < i && !r.failed; j++)
-                if (strcmp(set->patches[j].name, set->patches[i].name) == 0)
-                    fail(&r, "two patches have this name");
-        }
-        // "default": the patch to start on at boot
-        const cJSON *start = cJSON_GetObjectItemCaseSensitive(root, "default");
-        set->startup = 0;
-        r.where = "file";
-        if (!r.failed && start) {
-            if (!cJSON_IsString(start)) {
-                fail(&r, "default should be a patch name");
-            } else {
-                set->startup = find_patch(patches, start->valuestring);
-                if (set->startup < 0) fail(&r, "default is \"%s\", which isn't in the file", start->valuestring);
-            }
-        }
+        read_patches(&r, patches, set);
+        read_default(&r, root, patches, set);
     }
     cJSON_Delete(root);
     return !r.failed;

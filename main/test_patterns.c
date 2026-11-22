@@ -1,4 +1,4 @@
-#include "effects.h"
+#include "test_patterns.h"
 #include <stddef.h>
 
 #define DIM_GRADIENT_MS    5000
@@ -39,22 +39,22 @@ static void render_dim_test(uint32_t ms, rgb16_t *frame, int count)
     }
 }
 
-const char *effects_test_name(test_t test)
+const char *test_pattern_name(test_pattern_t pattern)
 {
-    return names[test];
+    return names[pattern];
 }
 
-void effects_render_test(test_t test, uint32_t ms, rgb16_t *frame, int count)
+void test_pattern_render(test_pattern_t pattern, uint32_t ms, rgb16_t *frame, int count)
 {
-    if (test == TEST_RGB)
+    if (pattern == TEST_RGB)
         render_rgb_test(frame, count);
     else
         render_dim_test(ms, frame, count);
 }
 
-const char *effects_test_phase(test_t test, uint32_t ms)
+const char *test_pattern_phase(test_pattern_t pattern, uint32_t ms)
 {
-    if (test != TEST_DIM)
+    if (pattern != TEST_DIM)
         return NULL;
     uint32_t t = ms % DIM_CYCLE_MS;
     return t < DIM_GRADIENT_MS               ? DIM_GRADIENT
@@ -62,7 +62,7 @@ const char *effects_test_phase(test_t test, uint32_t ms)
          :                                     DIM_FADE_IN;
 }
 
-bool effects_test_full_scale(test_t test)
+bool test_pattern_full_scale(test_pattern_t pattern)
 {
-    return test == TEST_DIM;
+    return pattern == TEST_DIM;
 }
