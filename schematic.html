@@ -1,0 +1,321 @@
+<title>LED Controller Schematic</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Page 1: the whole circuit as one schematic. Page 2: parts list and wiring rules. Colours match pinout.html. */
+:root {
+  --bg: #f3f5f2; --fg: #1b2420; --muted: #5d6b64; --line: #c9d2cc; --panel: #ffffff;
+  --wire: #0a7d5a; --pwr: #c0392b; --gnd: #2b2f33; --lcd: #8a7a55; --lcd-bg: #efe8d6;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #121715; --fg: #e3ebe6; --muted: #94a39b; --line: #2c3631; --panel: #1a201d;
+  --wire: #45d19f; --pwr: #ff7a6b; --gnd: #c4cacf; --lcd: #c7b48a; --lcd-bg: #2e2a1f;
+  color-scheme: dark } }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); margin: 0; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 24px; }
+h1 { font-size: 1.4rem; margin: 0; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; }
+.sub { color: var(--muted); margin: 4px 0 0; line-height: 1.5; }
+
+svg { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+svg text { font-family: var(--mono); font-size: 13px; fill: var(--fg); }
+svg .ref { font-family: var(--sans); font-weight: 600; font-size: 14px; }
+svg .val { font-family: var(--sans); font-size: 13px; }
+svg .cap { font-family: var(--sans); font-size: 12px; fill: var(--muted); }
+svg .hdr { font-size: 11px; fill: var(--muted); }
+svg .net { font-size: 12px; font-weight: 600; }
+svg .end { text-anchor: end; }
+svg .mid { text-anchor: middle; }
+
+.w   { fill: none; stroke: var(--wire); stroke-width: 2; }
+.p   { fill: none; stroke: var(--pwr); stroke-width: 2.5; }
+.g   { fill: none; stroke: var(--gnd); stroke-width: 2; }
+.box { fill: none; stroke: var(--fg); stroke-width: 2; }
+.part { fill: none; stroke: var(--fg); stroke-width: 2; }
+.dot { fill: var(--fg); stroke: none; }
+.opt { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.lcd { fill: var(--lcd-bg); stroke: var(--lcd); stroke-width: 1.5; }
+svg .lcdt { fill: var(--lcd); font-size: 11px; }
+svg .pt { fill: var(--pwr); }
+svg .wt { fill: var(--wire); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 22px; height: 0; border-top: 3px solid; }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td code { font-family: var(--mono); font-weight: 600; }
+ul { margin: 0; padding-left: 20px; line-height: 1.55; font-size: 0.92rem; }
+
+@page { size: A4 landscape; margin: 10mm; }
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wrap { max-width: none; padding: 0; gap: 10px; }
+  .sub { font-size: 0.85rem; }
+  svg { width: auto; height: 158mm; align-self: center; }
+  table { font-size: 0.78rem; }
+  th, td { padding: 4px 6px; }
+  ul { font-size: 0.82rem; line-height: 1.45; }
+  .pagebreak { break-before: page; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>LED controller schematic</h1>
+    <p class="sub">The finished build, running standalone from the 24V supply. Pins are labelled with the GPIO and the diymore board's header position (T1–T15 top edge, B1–B15 bottom edge, from the USB end; see pinout.pdf). Every ground symbol is the same net.</p>
+  </header>
+
+  <div class="legend">
+    <span><i style="border-color:var(--pwr)"></i>Power (24V, 5V, 3.3V)</span>
+    <span><i style="border-color:var(--gnd)"></i>Ground</span>
+    <span><i style="border-color:var(--wire)"></i>Signal</span>
+    <span><i style="border-color:var(--muted);border-top-style:dashed"></i>Optional, not fitted</span>
+  </div>
+
+<svg viewBox="0 0 1400 850" role="img" aria-label="Circuit schematic for the LED controller">
+  <defs>
+    <g id="gnd"><path class="g" d="M0 0v14M-10 14h20M-6 19h12M-2 24h4"/></g>
+    <g id="v33"><path class="p" d="M0 0v-14M-9 -14h18"/><text class="net pt mid" y="-20">3V3</text></g>
+  </defs>
+
+  <!-- ===== 24V supply, fuse, bulk cap, strip ===== -->
+  <rect class="box" x="40" y="60" width="110" height="120" rx="4"/>
+  <text class="ref" x="95" y="52" text-anchor="middle">PS1</text>
+  <text class="val mid" x="95" y="115">24V PSU</text>
+  <text class="cap mid" x="95" y="133">sized to strip</text>
+  <text x="140" y="99" class="end">+</text>
+  <text x="140" y="159" class="end">−</text>
+  <path class="g" d="M150 155h30"/><use href="#gnd" x="180" y="155"/>
+
+  <path class="p" d="M150 95h50"/>
+  <rect class="part" x="200" y="86" width="60" height="18"/><path class="part" d="M200 95h60"/>
+  <text class="ref mid" x="230" y="78">F1</text>
+  <text class="cap mid" x="230" y="124">3–5A</text>
+
+  <path class="p" d="M260 95H1180"/>
+  <circle class="dot" cx="290" cy="95" r="4"/>
+  <circle class="dot" cx="820" cy="95" r="4"/>
+  <text class="net pt" x="600" y="86">+24V</text>
+
+  <!-- C1, polarised -->
+  <path class="p" d="M820 95v30"/>
+  <path class="part" d="M804 125h32"/>
+  <path class="part" d="M804 138q16 -8 32 0"/>
+  <text x="842" y="122" class="pt">+</text>
+  <path class="g" d="M820 134v20"/><use href="#gnd" x="820" y="154"/>
+  <text class="ref end" x="792" y="124">C1</text>
+  <text class="cap end" x="792" y="140">1000µF 35V+, stripe to GND,</text>
+  <text class="cap end" x="792" y="155">at the strip input</text>
+
+  <!-- Strip -->
+  <rect class="box" x="1180" y="60" width="180" height="125" rx="4"/>
+  <text class="ref" x="1270" y="52" text-anchor="middle">STRIP</text>
+  <text x="1190" y="99">24V</text>
+  <text x="1190" y="129">DIN</text>
+  <text x="1190" y="159">GND</text>
+  <text class="val" x="1250" y="105">SM16703SP3</text>
+  <text class="cap" x="1250" y="123">24V, WS2811 data</text>
+  <text class="cap" x="1250" y="141">LED_COUNT chips</text>
+  <text class="cap" x="1250" y="159">data flows →</text>
+  <path class="g" d="M1180 155h-30"/><use href="#gnd" x="1150" y="155"/>
+
+  <!-- R1 data resistor -->
+  <path class="w" d="M840 230H980V125h60"/>
+  <rect class="part" x="1040" y="117" width="60" height="16"/>
+  <path class="w" d="M1100 125h80"/>
+  <text class="ref mid" x="1070" y="110">R1</text>
+  <text class="cap mid" x="1070" y="150">330Ω</text>
+  <text class="cap" x="990" y="200">direct 3.3V data;</text>
+  <text class="cap" x="990" y="215">short wire</text>
+
+  <!-- ===== Buck converter ===== -->
+  <path class="p" d="M290 95V230h40"/>
+  <rect class="box" x="330" y="205" width="140" height="95" rx="4"/>
+  <text class="ref mid" x="400" y="197">U2</text>
+  <text x="338" y="234">IN+</text>
+  <text x="338" y="274">IN−</text>
+  <text x="462" y="234" class="end">OUT+</text>
+  <text x="462" y="274" class="end">OUT−</text>
+  <text class="val mid" x="400" y="292">LM2596</text>
+  <path class="g" d="M330 270h-20"/><use href="#gnd" x="310" y="270"/>
+  <path class="g" d="M470 270h30"/><use href="#gnd" x="500" y="270"/>
+  <text class="cap" x="330" y="322">Set to 5.0V on a meter</text>
+  <text class="cap" x="330" y="337">before connecting U1</text>
+
+  <path class="p" d="M470 230h70"/>
+  <text class="net pt mid" x="505" y="222">+5V</text>
+
+  <!-- ===== ESP32 board ===== -->
+  <rect class="box" x="540" y="190" width="300" height="620" rx="6"/>
+  <text class="ref" x="540" y="182">U1</text>
+  <text class="val" x="566" y="182">diymore ESP32-WROOM-32 + 1.9″ LCD</text>
+
+  <text x="550" y="234">VIN</text><text class="hdr" x="532" y="246" text-anchor="end">T1</text>
+  <text x="550" y="334">GND</text><text class="hdr" x="532" y="322" text-anchor="end">T2</text>
+  <path class="g" d="M540 330h-25"/><use href="#gnd" x="515" y="330"/>
+  <text x="550" y="394">USB</text>
+  <rect class="box" x="440" y="372" width="60" height="36" rx="4"/>
+  <text class="val mid" x="470" y="395">USB-C</text>
+  <path class="p" d="M500 390h40"/>
+  <text class="cap end" x="530" y="430">Flashing and bench power only.</text>
+  <text class="cap end" x="530" y="445">Never USB and VIN together.</text>
+
+  <rect class="lcd" x="610" y="420" width="150" height="120" rx="4"/>
+  <text class="lcdt mid" x="685" y="445">Onboard LCD</text>
+  <text class="lcdt mid" x="685" y="468">(internal)</text>
+  <text class="lcdt mid" x="685" y="488">CS 15 · DC 2</text>
+  <text class="lcdt mid" x="685" y="506">RST 4 · BL 32</text>
+  <text class="lcdt mid" x="685" y="524">SCLK 18 · MOSI 23</text>
+
+  <!-- Right-hand pins: label inside, header outside -->
+  <g>
+    <text x="830" y="234" class="end">GPIO13</text><text class="hdr" x="848" y="224">T3</text>
+    <text x="830" y="304" class="end">3V3</text><text class="hdr" x="848" y="294">B1</text>
+    <text x="830" y="334" class="end">GND</text><text class="hdr" x="848" y="324">B2</text>
+    <text x="830" y="394" class="end">GPIO33</text><text class="hdr" x="848" y="384">T9</text>
+    <text x="830" y="424" class="end">GPIO27</text><text class="hdr" x="848" y="414">T6</text>
+    <text x="830" y="454" class="end">GPIO14</text><text class="hdr" x="848" y="444">T5</text>
+    <text x="830" y="514" class="end">GPIO19</text><text class="hdr" x="848" y="504">B10</text>
+    <text x="830" y="544" class="end">GPIO21</text><text class="hdr" x="848" y="534">B11</text>
+    <text x="830" y="574" class="end">GPIO22</text><text class="hdr" x="848" y="564">B14</text>
+    <text x="830" y="634" class="end">GPIO16</text><text class="hdr" x="848" y="624">B6</text>
+    <text x="830" y="664" class="end">GPIO17</text><text class="hdr" x="848" y="654">B7</text>
+    <text x="830" y="724" class="end">GPIO26</text><text class="hdr" x="848" y="714">T7</text>
+    <text x="830" y="754" class="end">GPIO25</text><text class="hdr" x="848" y="744">T8</text>
+    <text x="830" y="784" class="end">GPIO35</text><text class="hdr" x="848" y="774">T11</text>
+  </g>
+  <path class="p" d="M840 300h40"/><use href="#v33" x="880" y="300"/>
+  <path class="g" d="M840 330h70"/><use href="#gnd" x="910" y="330"/>
+  <text class="cap" x="930" y="300">3.3V feeds the knobs and mic.</text>
+  <text class="cap" x="930" y="315">Not VIN: 5V would reach the GPIOs.</text>
+
+  <!-- ===== Left knob ===== -->
+  <path class="w" d="M840 390h170M840 420h170M840 450h170"/>
+  <rect class="box" x="1010" y="370" width="160" height="100" rx="4"/>
+  <text class="ref" x="1080" y="404">ENC1</text>
+  <text x="1018" y="394">CLK</text><text x="1018" y="424">DT</text><text x="1018" y="454">SW</text>
+  <text class="val" x="1080" y="424">KY-040</text>
+  <text x="1162" y="399" class="end">+</text><text x="1162" y="449" class="end">GND</text>
+  <path class="p" d="M1170 395h40"/><use href="#v33" x="1210" y="395"/>
+  <path class="g" d="M1170 445h40"/><use href="#gnd" x="1210" y="445"/>
+  <text class="val" x="1245" y="405">Left knob</text>
+  <text class="cap" x="1245" y="423">Brightness</text>
+  <text class="cap" x="1245" y="439">Press: previous patch</text>
+
+  <!-- ===== Right knob ===== -->
+  <path class="w" d="M840 510h170M840 540h170M840 570h170"/>
+  <rect class="box" x="1010" y="490" width="160" height="100" rx="4"/>
+  <text class="ref" x="1080" y="524">ENC2</text>
+  <text x="1018" y="514">CLK</text><text x="1018" y="544">DT</text><text x="1018" y="574">SW</text>
+  <text class="val" x="1080" y="544">KY-040</text>
+  <text x="1162" y="519" class="end">+</text><text x="1162" y="569" class="end">GND</text>
+  <path class="p" d="M1170 515h40"/><use href="#v33" x="1210" y="515"/>
+  <path class="g" d="M1170 565h40"/><use href="#gnd" x="1210" y="565"/>
+  <text class="val" x="1245" y="525">Right knob</text>
+  <text class="cap" x="1245" y="543">Speed</text>
+  <text class="cap" x="1245" y="559">Press: next patch</text>
+
+  <!-- ===== Mode switch, on-off-on ===== -->
+  <path class="w" d="M840 630h216M840 660h216"/>
+  <circle class="part" cx="1060" cy="630" r="4"/>
+  <circle class="part" cx="1060" cy="660" r="4"/>
+  <circle class="part" cx="1130" cy="645" r="4"/>
+  <path class="part" d="M1126 645L1072 645"/>
+  <path class="g" d="M1134 645h66"/><use href="#gnd" x="1200" y="645"/>
+  <text class="ref" x="1010" y="612">SW1</text>
+  <text class="cap" x="1048" y="612">on-off-on</text>
+  <text class="hdr" x="1040" y="625" text-anchor="end">A</text>
+  <text class="hdr" x="1040" y="678" text-anchor="end">B</text>
+  <text class="val" x="1245" y="636">Mode switch</text>
+  <text class="cap" x="1245" y="654">A Setup, B Edit, middle Play</text>
+  <text class="cap" x="1245" y="670">Internal pull-ups;</text>
+  <text class="cap" x="1245" y="686">low = selected</text>
+
+  <!-- ===== Microphone ===== -->
+  <path class="w" d="M840 720h170M840 750h170M840 780h170"/>
+  <rect class="box" x="1010" y="700" width="160" height="100" rx="4"/>
+  <text class="ref" x="1068" y="734">U3</text>
+  <text x="1018" y="724">SCK</text><text x="1018" y="754">WS</text><text x="1018" y="784">SD</text>
+  <text class="val" x="1068" y="754">INMP441</text>
+  <text x="1162" y="719" class="end">VDD</text><text x="1162" y="749" class="end">GND</text><text x="1162" y="789" class="end">L/R</text>
+  <path class="p" d="M1170 715h30"/><use href="#v33" x="1200" y="715"/>
+  <path class="g" d="M1170 745h30"/><use href="#gnd" x="1200" y="745"/>
+  <path class="g" d="M1170 785h60"/><use href="#gnd" x="1230" y="785"/>
+  <text class="val" x="1265" y="736">I2S microphone</text>
+  <text class="cap" x="1265" y="754">L/R to GND: left</text>
+  <text class="cap" x="1265" y="770">channel. Keep the</text>
+  <text class="cap" x="1265" y="786">sound hole clear.</text>
+
+  <!-- ===== Optional level shifter ===== -->
+  <rect class="opt" x="30" y="480" width="470" height="350" rx="8"/>
+  <text class="ref" x="46" y="506">Option: level shifter (not fitted)</text>
+  <text class="cap" x="46" y="526">U4 SN74AHCT125N, channel 1. Goes between GPIO13 and R1</text>
+  <text class="cap" x="46" y="542">if the strip glitches on a longer data wire. Garbled the data</text>
+  <text class="cap" x="46" y="558">on the bench (2026-11-18); direct 3.3V works.</text>
+
+  <path class="p" d="M230 625V590H150v10"/>
+  <circle class="dot" cx="230" cy="590" r="4"/>
+  <text class="net pt" x="240" y="586">+5V (VIN)</text>
+  <text class="hdr" x="238" y="612">14</text>
+  <path class="part" d="M134 600h32M134 610h32"/>
+  <path class="g" d="M150 610v8"/><use href="#gnd" x="150" y="618"/>
+  <text class="ref" x="96" y="602">C2</text>
+  <text class="cap" x="82" y="618">0.1µF</text>
+
+  <text class="net wt" x="46" y="636">GPIO13</text>
+  <path class="w" d="M46 645H200"/>
+  <text class="hdr" x="186" y="638" text-anchor="end">2</text>
+  <path class="part" d="M200 615v60l60 -30z"/>
+  <text class="hdr" x="268" y="638">3</text>
+  <path class="w" d="M260 645h40"/>
+  <rect class="part" x="300" y="637" width="60" height="16"/>
+  <text class="ref mid" x="330" y="630">R1</text>
+  <path class="w" d="M360 645h60"/>
+  <text class="net wt" x="426" y="649">DIN</text>
+  <path class="g" d="M230 660v30"/><use href="#gnd" x="230" y="690"/>
+  <text class="hdr" x="238" y="680">1 (1OE)</text>
+
+  <text class="cap" x="46" y="745">Pin 7 → GND. Unused inputs 2A, 3A, 4A (pins 5, 9, 12) → GND.</text>
+  <text class="cap" x="46" y="761">Unused enables 2OE, 3OE, 4OE (pins 4, 10, 13) → +5V.</text>
+  <text class="cap" x="46" y="777">C2 across pins 14 and 7, close to the chip.</text>
+  <text class="cap" x="46" y="793">On USB power, VIN gives about 4.7V: still within 4.5–5.5V.</text>
+</svg>
+
+  <section class="pagebreak">
+    <h2>Parts</h2>
+    <table>
+      <thead><tr><th>Ref</th><th>Part</th><th>Connections</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>PS1</code></td><td>24V power supply</td><td>+ → F1, − → GND</td><td>Size from strip W/m × length + 30%</td></tr>
+        <tr><td><code>F1</code></td><td>Inline fuse holder, 3–5A fuse</td><td>PS1 + → +24V rail</td><td>Protects against a short on the 24V side</td></tr>
+        <tr><td><code>C1</code></td><td>1000µF electrolytic, 35V or more</td><td>+24V to GND</td><td>At the strip input, stripe (−) to GND. Absorbs switch-on spikes</td></tr>
+        <tr><td><code>STRIP</code></td><td>24V SM16703SP3 addressable strip</td><td>24V, DIN, GND pads</td><td>Power straight from the 24V rail, never through U1. Feed the end the arrows point away from</td></tr>
+        <tr><td><code>R1</code></td><td>330Ω resistor</td><td>GPIO13 (T3) → strip DIN</td><td>Fit at the board end of the data wire</td></tr>
+        <tr><td><code>U2</code></td><td>LM2596 adjustable buck module</td><td>IN+ ← +24V, OUT+ → U1 VIN (T1), IN−/OUT− → GND</td><td>Trim to 5.0V with nothing connected first</td></tr>
+        <tr><td><code>U1</code></td><td>diymore ESP32-WROOM-32 with 1.9″ ST7789 LCD</td><td>See the schematic and pinout.pdf</td><td>The HW-463C DevKit V1 stand-in uses the same GPIOs, without the LCD</td></tr>
+        <tr><td><code>ENC1</code></td><td>KY-040 rotary encoder</td><td>CLK GPIO33 (T9), DT GPIO27 (T6), SW GPIO14 (T5), + 3V3, GND</td><td>Left knob: brightness, press for the previous patch</td></tr>
+        <tr><td><code>ENC2</code></td><td>KY-040 rotary encoder</td><td>CLK GPIO19 (B10), DT GPIO21 (B11), SW GPIO22 (B14), + 3V3, GND</td><td>Right knob: speed, press for the next patch. B12/B13 between are USB serial</td></tr>
+        <tr><td><code>SW1</code></td><td>Three-position SPDT switch, on-off-on</td><td>A GPIO16 (B6), B GPIO17 (B7), common → GND</td><td>Middle (neither) is Play. If Setup and Edit come out swapped, swap A and B</td></tr>
+        <tr><td><code>U3</code></td><td>INMP441 I2S MEMS microphone module</td><td>SCK GPIO26 (T7), WS GPIO25 (T8), SD GPIO35 (T11), VDD 3V3, GND, L/R → GND</td><td>L/R must not float</td></tr>
+        <tr><td><code>U4</code>, <code>C2</code></td><td>SN74AHCT125N (DIP-14), 0.1µF ceramic</td><td>See the dashed box</td><td>Optional, not fitted</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Rules</h2>
+    <ul>
+      <li>All grounds are one net: PSU −, C1, strip, U2 in and out, U1 and every peripheral. Run the strip's ground straight back to the PSU so strip current doesn't flow through U1's ground.</li>
+      <li>The strip's 24V pad never goes near U1. A slip puts 24V on a GPIO and kills the ESP32.</li>
+      <li>Power U1 from USB <em>or</em> U2, never both. Unplug U2's output before plugging in USB to flash.</li>
+      <li>Knobs and mic take 3.3V (B1), not VIN.</li>
+      <li>No external pull-ups are needed: the firmware turns on the internal pull-ups for the knobs and the switch.</li>
+      <li>Leave GPIO2, 4, 15, 18, 23 and 32 alone (onboard LCD) and GPIO12 unconnected (boot pin). Spare: GPIO5 (boot pin), 34, 36, 39 (input only).</li>
+    </ul>
+  </section>
+</div>

@@ -45,6 +45,7 @@ led-controller/
 ├── tools/editor_server.py ← runs the editor on the Mac with a pretend controller
 ├── HARDWARE.md          ← pinouts, strip wiring, power, parts and design decisions
 ├── pinout.html / .pdf   ← printable bench wiring card for the diymore LCD board
+├── schematic.html / .pdf ← full circuit schematic, parts list and wiring rules
 └── README.md            ← this file
 ```
 
