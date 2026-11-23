@@ -18,6 +18,7 @@ typedef struct {
 extern const bool screen_present;
 
 void screen_init(void);
+void screen_splash(void);   // the DANTELORE logo, full screen
 
 // Play screen: patch name, both knobs' settings, a live preview of the strip
 void screen_play(void);                                    // the fixed parts; clears the screen

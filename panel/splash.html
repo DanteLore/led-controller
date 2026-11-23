@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DANTELORE splash screen</title>
+<!--
+  The LCD's boot splash: the front panel's logo and frame at the screen's 320 × 170 pixels.
+  Regenerate main/splash.rgb565 from the repo root with tools/make_splash.sh.
+-->
+<style>
+  @font-face { font-family: Logo;  src: local("Futura-CondensedExtraBold"); }
+  @font-face { font-family: Label; src: local("Futura-Medium"); }
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  svg { display: block; width: 320px; height: 170px; }
+</style>
+</head>
+<body>
+<svg id="art" viewBox="0 0 320 170" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+// Same colours and stepped shadow as panel/front-panel.html, in pixels
+const W = 320, H = 170;
+const stripes = { inset: 7, pitch: 6, width: 4, radius: 18, gap: 92, colours: ['#9C3D1C', '#D9701E', '#E6AE34'] };
+const logo = { text: 'DANTELORE', size: 44, baseline: 98 };
+const url = 'dantelore.com';
+const C = { panel: '#DCC59D', panelEdge: '#CDB386', ink: '#3A2416' };
+
+const NS = 'http://www.w3.org/2000/svg';
+function el(parent, tag, attrs = {}, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+
+// One stripe: a rounded rectangle broken at the bottom for the URL
+function stripePath(i) {
+  const s = stripes, d = s.inset + i * s.pitch, r = s.radius - i * s.pitch;
+  const L = d, R = W - d, T = d, B = H - d, gl = W / 2 - s.gap / 2, gr = W / 2 + s.gap / 2;
+  return `M ${gl} ${B} H ${L + r} A ${r} ${r} 0 0 1 ${L} ${B - r} V ${T + r} A ${r} ${r} 0 0 1 ${L + r} ${T}
+          H ${R - r} A ${r} ${r} 0 0 1 ${R} ${T + r} V ${B - r} A ${r} ${r} 0 0 1 ${R - r} ${B} H ${gr}`;
+}
+
+const svg = document.getElementById('art');
+const defs = el(svg, 'defs');
+const grad = el(defs, 'radialGradient', { id: 'paint', cx: '50%', cy: '42%', r: '75%' });
+el(grad, 'stop', { offset: '0%', 'stop-color': C.panel });
+el(grad, 'stop', { offset: '100%', 'stop-color': C.panelEdge });
+el(svg, 'rect', { x: 0, y: 0, width: W, height: H, fill: 'url(#paint)' });
+
+stripes.colours.forEach((c, i) =>
+  el(svg, 'path', { d: stripePath(i), fill: 'none', stroke: c, 'stroke-width': stripes.width }));
+
+const lg = el(svg, 'g', { transform: `translate(${W / 2} ${logo.baseline}) skewX(-9)` });
+const steps = [...stripes.colours].reverse(), k = logo.size / 14;
+const text = (x, y, fill) => el(lg, 'text', { x, y, 'font-family': 'Logo', 'font-size': logo.size, 'letter-spacing': 0.6 * k,
+                                              'text-anchor': 'middle', fill }, logo.text);
+for (let i = steps.length; i >= 1; i--) text(i * 0.55 * k, i * 0.35 * k, steps[i - 1]);
+text(0, 0, C.ink);
+
+const B = H - stripes.inset - stripes.pitch;
+el(svg, 'text', { x: W / 2, y: B + 4, 'font-family': 'Label', 'font-size': 11, fill: C.ink,
+                  'text-anchor': 'middle', 'letter-spacing': 0.8 }, url);
+</script>
+</body>
+</html>

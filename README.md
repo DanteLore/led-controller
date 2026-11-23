@@ -44,6 +44,7 @@ led-controller/
 │   └── wifi/            ← joins WiFi, setup hotspot, captive DNS, setup page (setup.html)
 ├── tools/editor_server.py ← runs the editor on the Mac with a pretend controller
 ├── HARDWARE.md          ← pinouts, strip wiring, power, parts and design decisions
+├── panel/splash.html   ← the boot splash artwork (tools/make_splash.sh → main/splash.rgb565)
 ├── pinout.html / .pdf   ← printable bench wiring card for the diymore LCD board
 ├── schematic.html / .pdf ← full circuit schematic, parts list and wiring rules
 └── README.md            ← this file
@@ -108,6 +109,7 @@ Always after the patches, in C:
 - **Brightness** is perceptual 0–100% (default 50%, roughly 22% PWM), shared by all modes
 - **Speed** is per mode, so each mode remembers its own. Knob steps are logarithmic: every 5 clicks doubles or halves it, from 1/8x to 8x, so each click feels the same size at any speed. Changing speed changes the rate of motion without the effect jumping, because effect time is accumulated as real time × speed
 - Serial log on every change plus a heartbeat every 5s with mode, brightness, speed and measured frame rate
+- **Splash:** at power-on the LCD shows the DANTELORE logo from the front panel for 6s; the strip starts playing straight away. The image is `main/splash.rgb565`, made from `panel/splash.html` by `tools/make_splash.sh` (Chrome for the panel's fonts, then `tools/png_to_rgb565.py`, standard library only)
 - LCD (Play) shows the patch, brightness and speed (each with a bar), a live preview of the strip, and a MIC level bar. The title line shows the board's address once joined, or WIFI SETUP while the hotspot is up
 - **QR codes:** only in Setup, so Play's screen is never covered
 - Settings are compile-time `#define`s: `LED_PIN`, `LED_COUNT` (chips, not LEDs), `LED_ORDER` in `board.h`; `HOSTNAME` in `main.c`

@@ -3,6 +3,7 @@
 #include "st7789.h"
 #include "qr.h"
 #include <stdio.h>
+#include <string.h>
 
 #if CONFIG_LED_CONTROLLER_LCD
 
@@ -33,6 +34,7 @@
 #define QR_QUIET       4   // light modules round the code, which scanners need
 #define TEXT_X        16
 #define TEXT_LINE_H   14
+#define SPLASH_ROWS   10   // splash rows staged in RAM per transfer
 
 #define COLOR_GREY    RGB565(110, 110, 110)
 
@@ -41,6 +43,19 @@ const bool screen_present = true;
 void screen_init(void)
 {
     st7789_init();
+}
+
+// The logo, rendered from panel/splash.html by tools/make_splash.sh. Copied
+// through RAM a few rows at a time: SPI DMA can't read straight from flash.
+void screen_splash(void)
+{
+    extern const uint8_t splash_start[] asm("_binary_splash_rgb565_start");
+    static uint16_t rows[ST7789_WIDTH * SPLASH_ROWS];
+    for (int y = 0; y < ST7789_HEIGHT; y += SPLASH_ROWS) {
+        int n = ST7789_HEIGHT - y < SPLASH_ROWS ? ST7789_HEIGHT - y : SPLASH_ROWS;
+        memcpy(rows, splash_start + y * ST7789_WIDTH * 2, n * ST7789_WIDTH * 2);
+        st7789_draw_pixels(0, y, ST7789_WIDTH, n, rows);
+    }
 }
 
 // The knobs sit either side of the screen, so the hint matches them up
@@ -168,6 +183,7 @@ void screen_text(const screen_line_t *lines, int count, const char *qr_text)
 const bool screen_present = false;
 
 void screen_init(void) {}
+void screen_splash(void) {}
 void screen_play(void) {}
 void screen_network(const char *text, bool good, bool warn) {}
 void screen_patch(const char *name, bool web_draft) {}

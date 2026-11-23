@@ -2,6 +2,7 @@
 #include "screen.h"
 #include "mic.h"
 #include "wifi.h"
+#include "esp_timer.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #define PREVIEW_EVERY   4        // LCD preview at 50fps; it takes ~3ms to draw
 #define WIFI_CHECK_US   500000
 #define NOTHING_DRAWN  -1
+#define SPLASH_US      6000000   // the logo shows this long at power-on
 
 #define LINES(...) (screen_line_t[]){ __VA_ARGS__ }, sizeof((screen_line_t[]){ __VA_ARGS__ }) / sizeof(screen_line_t)
 
@@ -31,6 +33,7 @@ static int64_t next_wifi_check;
 static int drawn = NOTHING_DRAWN;   // panel_t
 static play_shown_t shown;
 static uint32_t frames;
+static int64_t splash_until;
 
 // ---- Network
 
@@ -130,14 +133,19 @@ static void update_preview(const beat_state_t *beat, const rgb16_t *frame, int c
 
 // ---- Public
 
+// The LEDs start straight away; the screens wait until the splash is done
 void ui_init(void)
 {
     screen_init();
+    screen_splash();
+    splash_until = esp_timer_get_time() + SPLASH_US;
 }
 
 void ui_update(int64_t now, panel_t panel, const player_status_t *player, const beat_state_t *beat,
                const rgb16_t *frame, int count)
 {
+    if (now < splash_until)
+        return;
     bool network_changed = poll_network(now);
     if (panel != drawn || (network_changed && panel == PANEL_SETUP)) {
         if (panel == PANEL_SETUP) draw_setup();
